@@ -60,36 +60,35 @@ create type public.verified_payment_status as enum (
 );
 
 -- ---------------------------------------------------------------------
--- Profiles + admin guard
+-- Admin users + sessions
 -- ---------------------------------------------------------------------
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+create table public.admin_users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
   full_name text,
   role public.user_role not null default 'staff',
+  password_hash text not null,
+  is_active boolean not null default true,
+  last_signed_in_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (position('@' in email) > 1)
 );
+create unique index admin_users_email_lower_uidx on public.admin_users(lower(email));
 
-create trigger profiles_set_updated_at
-before update on public.profiles
+create trigger admin_users_set_updated_at
+before update on public.admin_users
 for each row execute function public.set_updated_at();
 
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists(
-    select 1 from public.profiles
-    where id = auth.uid()
-      and role in ('staff', 'admin', 'superadmin')
-  );
-$$;
-
-revoke all on function public.is_admin() from public;
-grant execute on function public.is_admin() to anon, authenticated;
+create table public.admin_sessions (
+  token_hash text primary key,
+  user_id uuid not null references public.admin_users(id) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+create index admin_sessions_user_idx on public.admin_sessions(user_id, expires_at desc);
+create index admin_sessions_expires_idx on public.admin_sessions(expires_at);
 
 -- ---------------------------------------------------------------------
 -- Content tables
@@ -402,8 +401,7 @@ begin
 end;
 $$;
 
-revoke all on function public.enqueue_pending_payment_recovery(uuid, text, text, text) from public, anon, authenticated;
-grant execute on function public.enqueue_pending_payment_recovery(uuid, text, text, text) to service_role;
+revoke all on function public.enqueue_pending_payment_recovery(uuid, text, text, text) from public;
 
 create or replace function public.claim_pending_payment_recoveries(
   p_limit int default 5,
@@ -455,8 +453,7 @@ begin
 end;
 $$;
 
-revoke all on function public.claim_pending_payment_recoveries(int, text, uuid) from public, anon, authenticated;
-grant execute on function public.claim_pending_payment_recoveries(int, text, uuid) to service_role;
+revoke all on function public.claim_pending_payment_recoveries(int, text, uuid) from public;
 
 -- ---------------------------------------------------------------------
 -- Contact submissions
@@ -530,9 +527,8 @@ as $$
 $$;
 
 revoke all on function public.room_type_units_available(uuid, date, date) from public;
-grant execute on function public.room_type_units_available(uuid, date, date) to anon, authenticated, service_role;
 
--- create_booking: public-facing RPC called from the storefront.
+-- create_booking: server-side function called from the storefront.
 -- Holds inventory immediately via pending_payment + expires_at.
 -- Serialises concurrent bookings for the same room type via FOR UPDATE.
 create or replace function public.create_booking(
@@ -627,7 +623,6 @@ end;
 $$;
 
 revoke all on function public.create_booking(text, date, date, int, int, text, text, text, text) from public;
-grant execute on function public.create_booking(text, date, date, int, int, text, text, text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- Trigger: prevent unsafe inventory reductions
@@ -662,7 +657,7 @@ begin
         or (b.status = 'pending_payment' and b.expires_at > now())
       )
     group by d.day
-  ) overlaps;
+  ) overlap_counts;
 
   if new.inventory_count < v_max_concurrent then
     raise exception
@@ -680,79 +675,9 @@ for each row
 when (new.inventory_count is distinct from old.inventory_count)
 execute function public.room_types_inventory_shrink_guard();
 
--- ---------------------------------------------------------------------
--- Row Level Security
--- ---------------------------------------------------------------------
-alter table public.profiles enable row level security;
-alter table public.room_types enable row level security;
-alter table public.amenities enable row level security;
-alter table public.experiences enable row level security;
-alter table public.services enable row level security;
-alter table public.gallery_images enable row level security;
-alter table public.bookings enable row level security;
-alter table public.payment_attempts enable row level security;
-alter table public.pesapal_ipn_events enable row level security;
-alter table public.pending_payment_recoveries enable row level security;
-alter table public.contact_submissions enable row level security;
-alter table public.ops_incidents enable row level security;
-
--- Profiles
-create policy profiles_self_read on public.profiles for select
-  using (auth.uid() = id or public.is_admin());
-create policy profiles_admin_all on public.profiles for all
-  using (public.is_admin()) with check (public.is_admin());
-
--- Content tables: anon SELECT only where published; admins full CRUD.
-create policy room_types_anon_read on public.room_types for select
-  using (is_published = true);
-create policy room_types_admin_all on public.room_types for all
-  using (public.is_admin()) with check (public.is_admin());
-
-create policy amenities_anon_read on public.amenities for select
-  using (is_published = true);
-create policy amenities_admin_all on public.amenities for all
-  using (public.is_admin()) with check (public.is_admin());
-
-create policy experiences_anon_read on public.experiences for select
-  using (is_published = true);
-create policy experiences_admin_all on public.experiences for all
-  using (public.is_admin()) with check (public.is_admin());
-
-create policy services_anon_read on public.services for select
-  using (is_published = true);
-create policy services_admin_all on public.services for all
-  using (public.is_admin()) with check (public.is_admin());
-
-create policy gallery_images_anon_read on public.gallery_images for select
-  using (is_published = true);
-create policy gallery_images_admin_all on public.gallery_images for all
-  using (public.is_admin()) with check (public.is_admin());
-
--- Bookings: no direct anon access (creation goes via create_booking RPC).
--- Service role bypasses RLS for Pesapal callback/IPN routes.
-create policy bookings_admin_all on public.bookings for all
-  using (public.is_admin()) with check (public.is_admin());
-
--- Payment attempts: admin read only; writes via service role.
-create policy payment_attempts_admin_read on public.payment_attempts for select
-  using (public.is_admin());
-
--- Pesapal IPN events: admin read only.
-create policy pesapal_ipn_events_admin_read on public.pesapal_ipn_events for select
-  using (public.is_admin());
-
--- Recovery queue: admin read only; writes via service role through RPCs.
-create policy pending_payment_recoveries_admin_read on public.pending_payment_recoveries for select
-  using (public.is_admin());
-
--- Contact submissions: anon INSERT, admin everything else.
-create policy contact_submissions_anon_insert on public.contact_submissions for insert
-  to anon, authenticated with check (true);
-create policy contact_submissions_admin_all on public.contact_submissions for all
-  using (public.is_admin()) with check (public.is_admin());
-
--- Ops incidents: admin read only.
-create policy ops_incidents_admin_read on public.ops_incidents for select
-  using (public.is_admin());
+-- Neon does not expose the database directly to browsers. Public reads,
+-- booking creation, payment handling, and admin CRUD all flow through
+-- server-only Next.js code using DATABASE_URL, so Postgres RLS and
+-- Supabase API roles are intentionally not part of this schema.
 
 commit;

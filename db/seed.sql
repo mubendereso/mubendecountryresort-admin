@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Seed data: ports content from app/*/data.ts into the database.
 -- UGX prices converted at ~3,700 UGX/USD, rounded to nearest 10,000 UGX.
--- Run via: supabase db reset (auto), or paste into the SQL editor.
+-- Run after db/0001_init.sql in the Neon SQL editor or via psql.
 -- =====================================================================
 
 begin;
