@@ -6,6 +6,14 @@ const nextConfig = {
       bodySizeLimit: "4mb"
     }
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: process.env.R2_PUBLIC_HOSTNAME ?? "cdn.mubendecountryresort.com"
+      }
+    ]
+  },
   async headers() {
     return [
       {

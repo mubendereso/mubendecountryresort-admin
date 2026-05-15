@@ -63,5 +63,7 @@ npm run admin:create-user -- staff@example.com "temporary-password" superadmin "
 - [x] Schema applied to live Neon database
 - [ ] Storefront wired to read from DB (currently reads hardcoded `data.ts`)
 - [x] Admin app scaffolded
+- [x] Room type admin surface
+- [x] Availability checker
 - [ ] Pesapal initiation + IPN handlers (live in storefront repo)
 - [ ] Pending-payment recovery scheduler (live in storefront repo)

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import {
   AdminAuthorizationError,
   requireApprovedAdminRole
@@ -26,12 +27,28 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen bg-canvas-light text-[#2a241a]">
       <header className="border-b border-stoneWarm-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">
-              Mubende Country Resort
-            </p>
-            <p className="mt-1 text-sm font-semibold">Admin</p>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <div className="flex flex-wrap items-center gap-5">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">
+                Mubende Country Resort
+              </p>
+              <p className="mt-1 text-sm font-semibold">Admin</p>
+            </div>
+            <nav className="flex flex-wrap items-center gap-2 text-sm font-medium text-oliveMuted-600">
+              <Link className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100" href="/dashboard">
+                Dashboard
+              </Link>
+              <Link className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100" href="/rooms">
+                Rooms
+              </Link>
+              <Link
+                className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100"
+                href="/availability"
+              >
+                Availability
+              </Link>
+            </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-oliveMuted-600">
