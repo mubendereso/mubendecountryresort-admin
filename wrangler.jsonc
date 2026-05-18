@@ -21,6 +21,12 @@
     // Enable the public access URL on the bucket in the R2 dashboard to get the
     // r2.dev hostname.
     "R2_PUBLIC_URL": "https://REPLACE_ME.r2.dev"
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
   }
   // DATABASE_URL and ADMIN_ALLOWED_ORIGINS are set via:
   //   - production: `wrangler secret put DATABASE_URL`
