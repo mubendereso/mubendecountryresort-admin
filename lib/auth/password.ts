@@ -1,7 +1,9 @@
 import "server-only";
 
 const PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256";
-const PASSWORD_HASH_ITERATIONS = 310000;
+// Cloudflare workerd caps PBKDF2 iterations at 100,000. Going higher throws
+// `NotSupportedError: iteration counts above 100000 are not supported`.
+const PASSWORD_HASH_ITERATIONS = 100000;
 const PASSWORD_HASH_KEY_LENGTH_BYTES = 32;
 const SALT_LENGTH_BYTES = 16;
 

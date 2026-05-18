@@ -22,7 +22,10 @@ if (!allowedRoles.has(role)) {
 }
 
 function hashPassword(password) {
-  const iterations = 310000;
+  // Cloudflare workerd caps PBKDF2 iterations at 100,000. Keep this in sync
+  // with PASSWORD_HASH_ITERATIONS in lib/auth/password.ts so hashes produced
+  // here can be verified by the Worker.
+  const iterations = 100000;
   const salt = randomBytes(16);
   const hash = pbkdf2Sync(password, salt, iterations, 32, "sha256");
   return ["pbkdf2_sha256", String(iterations), salt.toString("base64"), hash.toString("base64")].join(
