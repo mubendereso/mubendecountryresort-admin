@@ -11,11 +11,13 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "admin:create-user": "node scripts/create-admin-user.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/copy-sqlite-wasm.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@opennextjs/cloudflare": "^1.0.0",
+    "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "next": "^16.1.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
