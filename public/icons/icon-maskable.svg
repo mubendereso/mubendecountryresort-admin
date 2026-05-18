@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Maskable safe zone: keep all content inside the central 80% (10% padding all sides) -->
+  <rect width="512" height="512" fill="#f8f4ec"/>
+  <g transform="translate(140, 140)">
+    <!-- Roof -->
+    <path d="M116 0 L232 70 L232 82 L0 82 L0 70 Z" fill="#646b54"/>
+    <!-- House body -->
+    <rect x="24" y="82" width="184" height="150" fill="#998360"/>
+    <!-- Door -->
+    <rect x="98" y="152" width="36" height="80" rx="3" fill="#9d7548"/>
+    <!-- Windows -->
+    <rect x="46" y="116" width="36" height="30" rx="3" fill="#efe8d8"/>
+    <rect x="150" y="116" width="36" height="30" rx="3" fill="#efe8d8"/>
+  </g>
+</svg>
