@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mubendecountryresort-admin",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "mubende-resort"
+    }
+  ],
+  "vars": {
+    // Replace this once the bucket is created. Two options:
+    //   - Custom domain (post-domain purchase): https://cdn.mubendecountryresort.com
+    //   - R2 public dev URL (no domain needed):  https://pub-<hash>.r2.dev
+    // Enable the public access URL on the bucket in the R2 dashboard to get the
+    // r2.dev hostname.
+    "R2_PUBLIC_URL": "https://REPLACE_ME.r2.dev"
+  }
+  // DATABASE_URL and ADMIN_ALLOWED_ORIGINS are set via:
+  //   - production: `wrangler secret put DATABASE_URL`
+  //   - local dev:  .dev.vars (see .dev.vars.example)
+}

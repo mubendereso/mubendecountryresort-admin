@@ -1,5 +1,7 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
@@ -7,10 +9,13 @@ const nextConfig = {
     }
   },
   images: {
+    // Replace with the resort's CDN hostname (custom domain) or the bucket's
+    // r2.dev hostname once R2 is provisioned. R2_PUBLIC_HOSTNAME overrides at
+    // runtime for environments where it differs from production.
     remotePatterns: [
       {
         protocol: "https",
-        hostname: process.env.R2_PUBLIC_HOSTNAME ?? "cdn.mubendecountryresort.com"
+        hostname: process.env.R2_PUBLIC_HOSTNAME ?? "*.r2.dev"
       }
     ]
   },
@@ -29,4 +34,6 @@ const nextConfig = {
   }
 };
 
-module.exports = nextConfig;
+initOpenNextCloudflareForDev();
+
+export default nextConfig;
