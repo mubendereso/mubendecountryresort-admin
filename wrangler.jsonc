@@ -15,12 +15,11 @@
     }
   ],
   "vars": {
-    // Replace this once the bucket is created. Two options:
-    //   - Custom domain (post-domain purchase): https://cdn.mubendecountryresort.com
-    //   - R2 public dev URL (no domain needed):  https://pub-<hash>.r2.dev
-    // Enable the public access URL on the bucket in the R2 dashboard to get the
-    // r2.dev hostname.
-    "R2_PUBLIC_URL": "https://REPLACE_ME.r2.dev"
+    // r2.dev URL for the `mubende-resort` bucket (development tier — rate
+    // limited, fine for staff usage). Swap to a custom domain like
+    // https://cdn.mubendecountryresort.com once the domain is purchased
+    // and CNAME'd at the bucket.
+    "R2_PUBLIC_URL": "https://pub-22a0f9cfe4c04329944017ea20f1c65d.r2.dev"
   },
   "observability": {
     "logs": {
