@@ -3,6 +3,10 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // OpenNext normally injects this when it runs `next build` itself, but we
+  // build with `next build --webpack` + `--skipNextBuild` (Next 16.2 defaults
+  // builds to Turbopack, which OpenNext can't package), so set it explicitly.
+  output: "standalone",
   experimental: {
     serverActions: {
       bodySizeLimit: "4mb"
