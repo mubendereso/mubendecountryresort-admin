@@ -48,6 +48,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               >
                 Availability
               </Link>
+              <Link
+                className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100"
+                href="/inbox"
+              >
+                Inbox
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
