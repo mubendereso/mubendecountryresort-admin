@@ -39,6 +39,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100" href="/dashboard">
                 Dashboard
               </Link>
+              <Link className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100" href="/bookings">
+                Bookings
+              </Link>
               <Link className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100" href="/rooms">
                 Rooms
               </Link>
