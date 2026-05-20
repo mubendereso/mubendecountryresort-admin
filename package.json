@@ -16,25 +16,25 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "@opennextjs/cloudflare": "^1.0.0",
+    "@opennextjs/cloudflare": "^1.19.11",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "next": "^16.1.6",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "zod": "^4.4.1"
   },
   "overrides": {
     "postcss": "8.5.10"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250320.0",
+    "@cloudflare/workers-types": "^4.20260520.1",
     "@types/node": "^22.13.10",
-    "@types/react": "^19.0.10",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.21",
     "postcss": "8.5.10",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",
-    "wrangler": "^4.5.0"
+    "wrangler": "^4.93.0"
   }
 }
