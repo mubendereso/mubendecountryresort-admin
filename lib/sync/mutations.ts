@@ -57,6 +57,12 @@ const contactMarkSchema = z.object({
   status: z.enum(["new", "read", "archived"])
 });
 
+const roomUnitHousekeepingSchema = z.object({
+  unitId: z.string().uuid(),
+  status: z.enum(["dirty", "cleaning", "clean", "inspected", "out_of_order"]),
+  notes: z.string().trim().max(600).nullable()
+});
+
 export const MUTATIONS: Record<string, MutationDef> = {
   // Mark a contact submission read/archived/new. Idempotent (setting a status
   // to the same value is a no-op), so safe to retry. Offline-safe: no
@@ -83,6 +89,35 @@ export const MUTATIONS: Record<string, MutationDef> = {
           entityType: "contact_submission",
           entityId: input.contactId,
           summary: `Marked contact submission as ${input.status}`
+        }
+      };
+    }
+  },
+  // Update a physical room's housekeeping status. Idempotent and
+  // offline-safe: no inventory lock or booking allocation involved.
+  "room_unit.update_housekeeping": {
+    minRole: "staff",
+    run: async (raw, _ctx) => {
+      const input = roomUnitHousekeepingSchema.parse(raw);
+      const sql = getSql();
+      const rows = (await sql`
+        update room_units
+        set housekeeping_status = ${input.status}, notes = ${input.notes}
+        where id = ${input.unitId}
+        returning id, unit_name
+      `) as { id: string; unit_name: string }[];
+
+      if (rows.length === 0) {
+        throw new MutationError("Room unit not found.", false);
+      }
+
+      return {
+        audit: {
+          action: `room_unit.housekeeping_${input.status}`,
+          entityType: "room_unit",
+          entityId: input.unitId,
+          summary: `Marked ${rows[0].unit_name} as ${input.status.replaceAll("_", " ")}`,
+          context: { notes: input.notes }
         }
       };
     }

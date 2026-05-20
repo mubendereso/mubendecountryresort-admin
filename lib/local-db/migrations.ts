@@ -87,10 +87,34 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS contact_submissions_status_idx
         ON contact_submissions(status, created_at DESC);
     `
+  },
+  {
+    version: 4,
+    name: "mirror_room_units",
+    up: `
+      -- Mirror of public.room_units (Neon). Used by the housekeeping board
+      -- so room-readiness work can continue on weak WiFi.
+      CREATE TABLE IF NOT EXISTS room_units (
+        id                   TEXT PRIMARY KEY,
+        room_type_id         TEXT,
+        unit_name            TEXT,
+        floor                INTEGER,
+        housekeeping_status  TEXT,
+        notes                TEXT,
+        created_at           TEXT,
+        updated_at           TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS room_units_status_idx
+        ON room_units(housekeeping_status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS room_units_room_type_idx
+        ON room_units(room_type_id, unit_name);
+    `
   }
 ];
 
 // Tables the sync engine is allowed to write to when applying pulled changes.
 // Guards against a malformed change feed naming an arbitrary table (the table
 // name can't be parameterized in SQL, so it's interpolated — whitelist it).
-export const SYNCED_TABLES = new Set<string>(["contact_submissions"]);
+export const SYNCED_TABLES = new Set<string>(["contact_submissions", "room_units"]);

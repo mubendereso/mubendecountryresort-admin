@@ -215,6 +215,12 @@ export default async function DashboardPage() {
             Bookings
           </Link>
           <Link
+            href="/housekeeping"
+            className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-50"
+          >
+            Housekeeping
+          </Link>
+          <Link
             href="/availability"
             className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-50"
           >
