@@ -221,6 +221,12 @@ export default async function DashboardPage() {
             Housekeeping
           </Link>
           <Link
+            href="/calendar"
+            className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-50"
+          >
+            Calendar
+          </Link>
+          <Link
             href="/availability"
             className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-50"
           >
