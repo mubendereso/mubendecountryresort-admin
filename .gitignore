@@ -54,3 +54,4 @@ coverage/
 # Local agent / planning notes
 *.local.md
 progress-log.md
+implementation-plan.md

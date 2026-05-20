@@ -34,5 +34,7 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
   }
 
   await sql`UPDATE bookings SET status = ${newStatus} WHERE id = ${id}::uuid`;
+  revalidatePath("/dashboard");
+  revalidatePath("/front-desk");
   revalidatePath("/bookings");
 }
