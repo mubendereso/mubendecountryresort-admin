@@ -192,7 +192,7 @@ export default async function EditRoomTypePage({
         ) : (
           <p className="text-sm text-oliveMuted-600">No cover image set yet.</p>
         )}
-        <form action={uploadRoomCoverAction} encType="multipart/form-data" className="grid gap-3">
+        <form action={uploadRoomCoverAction} className="grid gap-3">
           <input type="hidden" name="id" value={room.id} />
           <input type="hidden" name="slug" value={room.slug} />
           <input
