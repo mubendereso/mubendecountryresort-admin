@@ -202,7 +202,7 @@ export default async function EditRoomTypePage({
             required
             className="text-sm"
           />
-          <p className="text-xs text-oliveMuted-600">JPEG, PNG, WebP, or AVIF. Max 4MB.</p>
+          <p className="text-xs text-oliveMuted-600">JPEG, PNG, WebP, or AVIF. Max 8MB.</p>
           <div>
             <button
               type="submit"

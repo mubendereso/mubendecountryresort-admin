@@ -37,5 +37,5 @@ export async function uploadImageFile(file: File, prefix: string): Promise<Uploa
   const extension = EXTENSION_BY_TYPE[file.type] ?? "bin";
   const key = `${prefix.replace(/^\/+|\/+$/g, "")}/${Date.now()}-${randomId()}.${extension}`;
 
-  return uploadObject(key, file.stream(), file.type);
+  return uploadObject(key, await file.arrayBuffer(), file.type);
 }
