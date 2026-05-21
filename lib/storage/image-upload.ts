@@ -3,7 +3,7 @@ import "server-only";
 import { uploadObject, type UploadResult } from "@/lib/storage/r2";
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 8 * 1024 * 1024;
 
 const EXTENSION_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -31,7 +31,7 @@ export async function uploadImageFile(file: File, prefix: string): Promise<Uploa
     throw new ImageUploadError("Image is empty.");
   }
   if (file.size > MAX_BYTES) {
-    throw new ImageUploadError("Image must be 4MB or smaller.");
+    throw new ImageUploadError("Image must be 8MB or smaller.");
   }
 
   const extension = EXTENSION_BY_TYPE[file.type] ?? "bin";
