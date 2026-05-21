@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/admin-role";
 import { buildLoginRedirect } from "@/lib/auth/utils";
 import { signOutAction } from "@/lib/auth/actions";
+import { AdminPushAutoEnrollment } from "@/components/pwa/admin-push-auto-enrollment";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let session: Awaited<ReturnType<typeof requireApprovedAdminRole>>;
@@ -104,6 +105,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <AdminPushAutoEnrollment />
     </div>
   );
 }

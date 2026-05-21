@@ -19,7 +19,14 @@
     // limited, fine for staff usage). Swap to a custom domain like
     // https://cdn.mubendecountryresort.com once the domain is purchased
     // and CNAME'd at the bucket.
-    "R2_PUBLIC_URL": "https://pub-22a0f9cfe4c04329944017ea20f1c65d.r2.dev"
+    "R2_PUBLIC_URL": "https://pub-22a0f9cfe4c04329944017ea20f1c65d.r2.dev",
+    // NEXT_PUBLIC_VAPID_PUBLIC_KEY is baked into the client bundle at build time.
+    // Set this before running `npm run deploy`. Generate a keypair with:
+    //   npx web-push generate-vapid-keys
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": ""
+    // VAPID_PRIVATE_KEY and VAPID_SUBJECT are server-only secrets:
+    //   wrangler secret put VAPID_PRIVATE_KEY
+    //   wrangler secret put VAPID_SUBJECT
   },
   "observability": {
     "logs": {

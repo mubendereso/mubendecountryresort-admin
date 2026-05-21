@@ -123,3 +123,52 @@ self.addEventListener("message", (event) => {
     self.skipWaiting();
   }
 });
+
+self.addEventListener("push", (event) => {
+  const payload = (() => {
+    if (!event.data) return {};
+    try { return event.data.json(); } catch { return { body: event.data.text() }; }
+  })();
+
+  event.waitUntil(
+    self.registration.showNotification(
+      typeof payload.title === "string" ? payload.title : "MCR Admin",
+      {
+        body: typeof payload.body === "string" ? payload.body : "A new booking is ready for review.",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag: typeof payload.tag === "string" ? payload.tag : undefined,
+        data: payload.data && typeof payload.data === "object" ? payload.data : {}
+      }
+    )
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const requestedUrl =
+    event.notification.data && typeof event.notification.data.url === "string"
+      ? event.notification.data.url
+      : "/bookings";
+  const candidateUrl = new URL(requestedUrl, self.location.origin);
+  const targetUrl =
+    candidateUrl.origin === self.location.origin
+      ? candidateUrl.href
+      : new URL("/bookings", self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      for (const client of clients) {
+        if (client.url === targetUrl && "focus" in client) return client.focus();
+      }
+      for (const client of clients) {
+        if (client.url.startsWith(self.location.origin)) {
+          if ("navigate" in client) await client.navigate(targetUrl);
+          if ("focus" in client) return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
+  );
+});
