@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateRoomTypeAction, uploadRoomCoverAction } from "@/lib/rooms/actions";
+import { updateRoomTypeAction } from "@/lib/rooms/actions";
 import { getRoomTypeBySlug } from "@/lib/rooms/data";
 import { listToTextarea } from "@/lib/rooms/format";
+import { RoomCoverUpload } from "./room-cover-upload";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -192,26 +193,7 @@ export default async function EditRoomTypePage({
         ) : (
           <p className="text-sm text-oliveMuted-600">No cover image set yet.</p>
         )}
-        <form action={uploadRoomCoverAction} className="grid gap-3">
-          <input type="hidden" name="id" value={room.id} />
-          <input type="hidden" name="slug" value={room.slug} />
-          <input
-            type="file"
-            name="image"
-            accept="image/jpeg,image/png,image/webp,image/avif"
-            required
-            className="text-sm"
-          />
-          <p className="text-xs text-oliveMuted-600">JPEG, PNG, WebP, or AVIF. Max 8MB.</p>
-          <div>
-            <button
-              type="submit"
-              className="rounded-2xl bg-oliveMuted-600 px-5 py-3 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
-            >
-              Upload cover image
-            </button>
-          </div>
-        </form>
+        <RoomCoverUpload roomId={room.id} slug={room.slug} />
       </section>
     </section>
   );
