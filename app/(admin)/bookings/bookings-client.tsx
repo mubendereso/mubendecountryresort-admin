@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateBookingStatusAction } from "@/lib/bookings/actions";
 import type { AdminRole } from "@/lib/auth/session";
@@ -197,25 +198,29 @@ function BookingRow({
 
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm font-semibold">{fmtUgx(booking.quoted_total_ugx)}</p>
-            {visibleTransitions.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {visibleTransitions.map((t) => (
-                  <button
-                    key={t.status}
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => onStatus(t.status)}
-                    className={`rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${
-                      t.status === "cancelled" || t.status === "no_show"
-                        ? "border border-stoneWarm-200 bg-white text-red-600 hover:bg-red-50"
-                        : "bg-oliveMuted-600 text-canvas-light hover:bg-oliveMuted-500"
-                    }`}
-                  >
-                    {isPending ? "Updating…" : t.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/bookings/${booking.id}/folio`}
+                className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+              >
+                Folio →
+              </Link>
+              {visibleTransitions.map((t) => (
+                <button
+                  key={t.status}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onStatus(t.status)}
+                  className={`rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${
+                    t.status === "cancelled" || t.status === "no_show"
+                      ? "border border-stoneWarm-200 bg-white text-red-600 hover:bg-red-50"
+                      : "bg-oliveMuted-600 text-canvas-light hover:bg-oliveMuted-500"
+                  }`}
+                >
+                  {isPending ? "Updating…" : t.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

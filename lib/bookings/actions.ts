@@ -34,6 +34,30 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
   }
 
   await sql`UPDATE bookings SET status = ${newStatus} WHERE id = ${id}::uuid`;
+
+  // Auto-post accommodation charge on first check-in (idempotent: skips if one already exists)
+  if (newStatus === "checked_in") {
+    await sql`
+      INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
+      SELECT
+        b.id,
+        rt.title || ' – ' ||
+          (b.check_out::date - b.check_in::date)::text ||
+          ' night' ||
+          CASE WHEN (b.check_out::date - b.check_in::date) = 1 THEN '' ELSE 's' END,
+        b.quoted_total_ugx,
+        'accommodation',
+        ${session.userId}::uuid
+      FROM bookings b
+      JOIN room_types rt ON rt.id = b.room_type_id
+      WHERE b.id = ${id}::uuid
+        AND NOT EXISTS (
+          SELECT 1 FROM folio_charges
+          WHERE booking_id = ${id}::uuid AND category = 'accommodation'
+        )
+    `;
+  }
+
   revalidatePath("/dashboard");
   revalidatePath("/front-desk");
   revalidatePath("/bookings");
