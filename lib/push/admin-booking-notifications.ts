@@ -1,20 +1,16 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
-import webpush from "web-push";
 import { getSql } from "@/lib/db/client";
 import { requireEnv } from "@/lib/env";
+import { sendWebPush, hashTopic } from "@/lib/push/webcrypto-push";
 
-const MAX_PUSH_TOPIC_LENGTH = 32;
 const MAX_ACTIVE_SUBSCRIPTIONS = 10;
 const MAX_DISPATCH_ATTEMPTS = 5;
 const NO_SUBSCRIBER_RETRY_DELAY_MS = 5 * 60_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000];
 
-function buildPushTopic(tag: string): string {
-  // Apple Web Push rejects Topic headers that are not valid base64url-decodable.
-  // SHA-256 hash + base64url slice is always valid and deterministic per tag.
-  return createHash("sha256").update(tag, "utf8").digest("base64url").slice(0, MAX_PUSH_TOPIC_LENGTH);
+async function buildPushTopic(tag: string): Promise<string> {
+  return hashTopic(tag);
 }
 
 function getRetryDelayMs(attemptCount: number): number {
@@ -131,29 +127,26 @@ async function sendToSubscription(
   payload: ReturnType<typeof buildNotificationPayload>
 ): Promise<SendOutcome> {
   try {
-    webpush.setVapidDetails(
-      requireEnv("VAPID_SUBJECT"),
-      requireEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY"),
-      requireEnv("VAPID_PRIVATE_KEY")
-    );
+    const result = await sendWebPush({
+      endpoint: subscription.endpoint,
+      p256dh: subscription.p256dh,
+      auth: subscription.auth,
+      payload,
+      vapidSubject: requireEnv("VAPID_SUBJECT"),
+      vapidPublicKey: requireEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY"),
+      vapidPrivateKey: requireEnv("VAPID_PRIVATE_KEY"),
+      topic: await buildPushTopic(payload.tag),
+      ttl: 300,
+    });
 
-    await webpush.sendNotification(
-      { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-      JSON.stringify(payload),
-      { TTL: 300, urgency: "high", topic: buildPushTopic(payload.tag) }
-    );
-
-    return { status: "sent" };
-  } catch (err) {
-    const statusCode =
-      typeof err === "object" && err !== null && "statusCode" in err && typeof err.statusCode === "number"
-        ? err.statusCode
-        : null;
-
-    if (statusCode === 404 || statusCode === 410) {
+    if (result.status === 404 || result.status === 410) {
       return { status: "stale" };
     }
-
+    if (!result.ok) {
+      return { status: "retryable", error: `HTTP ${result.status}` };
+    }
+    return { status: "sent" };
+  } catch (err) {
     return { status: "retryable", error: err instanceof Error ? err.message : "unknown" };
   }
 }
