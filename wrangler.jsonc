@@ -23,7 +23,7 @@
     // NEXT_PUBLIC_VAPID_PUBLIC_KEY is baked into the client bundle at build time.
     // Set this before running `npm run deploy`. Generate a keypair with:
     //   npx web-push generate-vapid-keys
-    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": ""
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BKomPU50h8HEgp47bT2tXCVQG2kGNvLlOyx0ouzhuHYNP_MjcoIDRKiV2qNcZ5g6QMr3y7maajnILe9RMO6LoNQ"
     // VAPID_PRIVATE_KEY and VAPID_SUBJECT are server-only secrets:
     //   wrangler secret put VAPID_PRIVATE_KEY
     //   wrangler secret put VAPID_SUBJECT
