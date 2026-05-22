@@ -7,6 +7,10 @@ import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { textareaToList } from "@/lib/rooms/format";
 import { ImageUploadError, uploadImageFile } from "@/lib/storage/image-upload";
+import { deleteObject, keyFromPublicUrl } from "@/lib/storage/r2";
+
+// Maximum number of gallery images per room.
+const MAX_GALLERY_IMAGES = 15;
 
 const roomTypeSchema = z.object({
   id: z.string().uuid(),
@@ -21,8 +25,9 @@ const roomTypeSchema = z.object({
   is_published: z.boolean(),
   details: z.array(z.string()),
   amenities: z.array(z.string()),
-  dining_hours: z.array(z.string()),
-  gallery: z.array(z.string())
+  dining_hours: z.array(z.string())
+  // gallery is managed separately via the gallery upload/remove actions so the
+  // core form save does not overwrite uploaded images.
 });
 
 function optionalText(value: string | undefined) {
@@ -53,8 +58,7 @@ export async function updateRoomTypeAction(formData: FormData) {
     is_published: formData.get("is_published") === "on",
     details: textareaToList(formData.get("details")),
     amenities: textareaToList(formData.get("amenities")),
-    dining_hours: textareaToList(formData.get("dining_hours")),
-    gallery: textareaToList(formData.get("gallery"))
+    dining_hours: textareaToList(formData.get("dining_hours"))
   });
 
   if (!parsed.success) {
@@ -76,7 +80,6 @@ export async function updateRoomTypeAction(formData: FormData) {
       details = ${room.details},
       amenities = ${room.amenities},
       dining_hours = ${room.dining_hours},
-      gallery = ${room.gallery},
       inventory_count = ${room.inventory_count},
       is_published = ${room.is_published},
       sort_order = ${room.sort_order}
@@ -128,4 +131,73 @@ export async function uploadRoomCoverAction(formData: FormData) {
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${slug}`);
   redirect(`/rooms/${slug}?message=${encodeURIComponent("Cover image updated.")}`);
+}
+
+// Appends a single uploaded image to a room's gallery. Called once per file by
+// the client (sequentially) so large multi-image selections don't exceed the
+// server action body limit. Throws on error; the client surfaces the message.
+export async function uploadRoomGalleryImageAction(formData: FormData): Promise<void> {
+  await requireContentManager();
+
+  const id = formData.get("id");
+  const slug = formData.get("slug");
+  if (typeof id !== "string" || typeof slug !== "string" || !id || !slug) {
+    throw new Error("Invalid upload request.");
+  }
+
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Choose an image to upload.");
+  }
+
+  const sql = getSql();
+  const rows = (await sql`
+    select coalesce(array_length(gallery, 1), 0)::int as count from room_types where id = ${id}
+  `) as { count: number }[];
+  const current = rows[0]?.count ?? 0;
+  if (current >= MAX_GALLERY_IMAGES) {
+    throw new Error(`Gallery is full (max ${MAX_GALLERY_IMAGES} images). Remove one first.`);
+  }
+
+  let url: string;
+  try {
+    ({ url } = await uploadImageFile(file, `rooms/${slug}/gallery`));
+  } catch (error) {
+    throw error instanceof ImageUploadError ? error : new Error("Image upload failed.");
+  }
+
+  await sql`update room_types set gallery = array_append(gallery, ${url}) where id = ${id}`;
+
+  revalidatePath("/rooms");
+  revalidatePath(`/rooms/${slug}`);
+}
+
+// Removes one image URL from a room's gallery and best-effort deletes the
+// underlying R2 object. Throws on error; the client surfaces the message.
+export async function removeRoomGalleryImageAction(formData: FormData): Promise<void> {
+  await requireContentManager();
+
+  const id = formData.get("id");
+  const slug = formData.get("slug");
+  const url = formData.get("url");
+  if (
+    typeof id !== "string" || typeof slug !== "string" || typeof url !== "string" ||
+    !id || !slug || !url
+  ) {
+    throw new Error("Invalid remove request.");
+  }
+
+  const sql = getSql();
+  await sql`update room_types set gallery = array_remove(gallery, ${url}) where id = ${id}`;
+
+  // Best-effort: delete the file from R2 if it belongs to our bucket.
+  try {
+    const key = keyFromPublicUrl(url);
+    if (key) await deleteObject(key);
+  } catch {
+    // Ignore — the DB reference is already gone, which is what matters.
+  }
+
+  revalidatePath("/rooms");
+  revalidatePath(`/rooms/${slug}`);
 }

@@ -36,3 +36,11 @@ export async function uploadObject(
 export async function deleteObject(key: string) {
   await getBucket().delete(key);
 }
+
+// Derive the R2 object key from a stored public URL, or null if the URL does
+// not belong to our bucket (e.g. an external/legacy URL we shouldn't delete).
+export function keyFromPublicUrl(url: string): string | null {
+  const base = getCloudflareContext().env.R2_PUBLIC_URL.replace(/\/$/, "");
+  if (!url.startsWith(base + "/")) return null;
+  return url.slice(base.length + 1);
+}

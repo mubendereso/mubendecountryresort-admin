@@ -4,6 +4,7 @@ import { updateRoomTypeAction } from "@/lib/rooms/actions";
 import { getRoomTypeBySlug } from "@/lib/rooms/data";
 import { listToTextarea } from "@/lib/rooms/format";
 import { RoomCoverUpload } from "./room-cover-upload";
+import { RoomGalleryManager } from "./room-gallery-manager";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -163,12 +164,6 @@ export default async function EditRoomTypePage({
               defaultValue={listToTextarea(room.dining_hours)}
               rows={5}
             />
-            <TextAreaField
-              label="Gallery image URLs"
-              name="gallery"
-              defaultValue={listToTextarea(room.gallery)}
-              rows={5}
-            />
           </div>
         </section>
 
@@ -194,6 +189,11 @@ export default async function EditRoomTypePage({
           <p className="text-sm text-oliveMuted-600">No cover image set yet.</p>
         )}
         <RoomCoverUpload roomId={room.id} slug={room.slug} />
+      </section>
+
+      <section className="surface-card grid gap-4 p-5">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Gallery images</p>
+        <RoomGalleryManager roomId={room.id} slug={room.slug} gallery={room.gallery} />
       </section>
     </section>
   );
