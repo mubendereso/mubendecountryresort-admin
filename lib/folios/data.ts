@@ -43,8 +43,17 @@ export async function getFolioData(bookingId: string): Promise<FolioData> {
     `
   ]);
 
+  // amount_ugx is a Postgres bigint, which the driver returns as a string.
+  // Coerce to number so the typed contract holds and arithmetic in the UI
+  // (sums, balance) doesn't fall back to string concatenation.
   return {
-    charges: charges as FolioCharge[],
-    payments: payments as FolioPayment[]
+    charges: (charges as FolioCharge[]).map((c) => ({
+      ...c,
+      amount_ugx: Number(c.amount_ugx)
+    })),
+    payments: (payments as FolioPayment[]).map((p) => ({
+      ...p,
+      amount_ugx: Number(p.amount_ugx)
+    }))
   };
 }

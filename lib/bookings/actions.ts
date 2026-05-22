@@ -56,6 +56,28 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
           WHERE booking_id = ${id}::uuid AND category = 'accommodation'
         )
     `;
+
+    // Record the online prepayment as a folio payment so the prepaid room
+    // lands in Total Paid (not Balance Due). The room is always paid in full
+    // before the booking is confirmed, so quoted_total_ugx is the amount paid.
+    // Idempotent: skips if the prepayment (the sole 'pesapal' payment) exists.
+    await sql`
+      INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by, recorded_at)
+      SELECT
+        b.id,
+        b.quoted_total_ugx,
+        'pesapal',
+        b.payment_reference,
+        ${session.userId}::uuid,
+        COALESCE(b.paid_at, now())
+      FROM bookings b
+      WHERE b.id = ${id}::uuid
+        AND b.paid_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM folio_payments
+          WHERE booking_id = ${id}::uuid AND method = 'pesapal'
+        )
+    `;
   }
 
   revalidatePath("/dashboard");
