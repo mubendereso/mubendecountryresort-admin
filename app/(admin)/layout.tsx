@@ -77,12 +77,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 Inbox
               </Link>
               {session.role !== "staff" && (
-                <Link
-                  className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100"
-                  href="/users"
-                >
-                  Users
-                </Link>
+                <>
+                  <Link
+                    className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100"
+                    href="/reports"
+                  >
+                    Reports
+                  </Link>
+                  <Link
+                    className="rounded-xl px-3 py-1.5 transition hover:bg-stoneWarm-100"
+                    href="/users"
+                  >
+                    Users
+                  </Link>
+                </>
               )}
             </nav>
           </div>
