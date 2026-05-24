@@ -466,9 +466,11 @@ export function FolioClient({
               </span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm text-oliveMuted-600">
-              <a href={`mailto:${booking.guest_email}`} className="hover:underline">
-                {booking.guest_email}
-              </a>
+              {booking.guest_email && (
+                <a href={`mailto:${booking.guest_email}`} className="hover:underline">
+                  {booking.guest_email}
+                </a>
+              )}
               {booking.guest_phone && (
                 <a href={`tel:${booking.guest_phone}`} className="hover:underline">
                   {booking.guest_phone}

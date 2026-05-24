@@ -15,6 +15,7 @@ export async function listGuests(): Promise<GuestSummary[]> {
         guest_full_name,
         guest_phone
       FROM bookings
+      WHERE guest_email IS NOT NULL
       ORDER BY guest_email, created_at DESC
     )
     SELECT

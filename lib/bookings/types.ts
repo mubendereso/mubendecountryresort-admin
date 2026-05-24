@@ -18,7 +18,7 @@ export type BookingRow = {
   guests_adults: number;
   guests_children: number;
   guest_full_name: string;
-  guest_email: string;
+  guest_email: string | null;
   guest_phone: string | null;
   special_requests: string | null;
   status: BookingStatus;

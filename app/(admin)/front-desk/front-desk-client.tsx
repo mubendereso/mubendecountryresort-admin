@@ -70,9 +70,11 @@ function BookingCard({
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">
               Guest Contact
             </p>
-            <a href={`mailto:${booking.guest_email}`} className="mt-1 block text-oliveMuted-700 hover:underline">
-              {booking.guest_email}
-            </a>
+            {booking.guest_email && (
+              <a href={`mailto:${booking.guest_email}`} className="mt-1 block text-oliveMuted-700 hover:underline">
+                {booking.guest_email}
+              </a>
+            )}
             {booking.guest_phone && (
               <a href={`tel:${booking.guest_phone}`} className="mt-1 block text-oliveMuted-700 hover:underline">
                 {booking.guest_phone}
@@ -202,7 +204,7 @@ export function FrontDeskClient({ initialData }: { initialData: FrontDeskData })
             Arrivals and departures for {formatDate(initialData.today)}.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="surface-card px-4 py-2 text-sm">
             <span className="font-semibold">{inHouseCount}</span>{" "}
             <span className="text-oliveMuted-600">in house</span>
@@ -211,6 +213,12 @@ export function FrontDeskClient({ initialData }: { initialData: FrontDeskData })
             <span className="font-semibold">{totalActions}</span>{" "}
             <span className="text-oliveMuted-600">actions today</span>
           </div>
+          <Link
+            href="/bookings/new"
+            className="rounded-2xl bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
+          >
+            + New Booking
+          </Link>
         </div>
       </header>
 

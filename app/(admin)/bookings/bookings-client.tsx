@@ -154,9 +154,11 @@ function BookingRow({
             <div className="grid gap-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Guest</p>
               <p className="text-sm font-medium">{booking.guest_full_name}</p>
-              <a href={`mailto:${booking.guest_email}`} className="text-sm text-oliveMuted-600 hover:underline">
-                {booking.guest_email}
-              </a>
+              {booking.guest_email && (
+                <a href={`mailto:${booking.guest_email}`} className="text-sm text-oliveMuted-600 hover:underline">
+                  {booking.guest_email}
+                </a>
+              )}
               {booking.guest_phone && (
                 <a href={`tel:${booking.guest_phone}`} className="text-sm text-oliveMuted-600 hover:underline">
                   {booking.guest_phone}
@@ -288,7 +290,15 @@ export function BookingsClient({
     <section className="grid gap-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold">Bookings</h1>
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="flex items-center gap-4">
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <Link
+            href="/bookings/new"
+            className="rounded-2xl bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
+          >
+            + New Booking
+          </Link>
+        </div>
       </header>
 
       {/* Filter tabs */}
