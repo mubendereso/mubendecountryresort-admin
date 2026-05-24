@@ -201,6 +201,14 @@ function BookingRow({
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm font-semibold">{fmtUgx(booking.quoted_total_ugx)}</p>
             <div className="flex flex-wrap items-center gap-2">
+              {(booking.status === "confirmed" || booking.status === "checked_in") && (
+                <Link
+                  href={`/bookings/${booking.id}/edit`}
+                  className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+                >
+                  Edit
+                </Link>
+              )}
               <Link
                 href={`/bookings/${booking.id}/folio`}
                 className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"

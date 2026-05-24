@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { postChargeAction, voidChargeAction, recordPaymentAction } from "@/lib/folios/actions";
 import type { AdminRole } from "@/lib/auth/session";
@@ -479,13 +480,23 @@ export function FolioClient({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="print:hidden rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
-          >
-            Print Folio
-          </button>
+          <div className="print:hidden flex items-center gap-2">
+            {(booking.status === "confirmed" || booking.status === "checked_in") && (
+              <Link
+                href={`/bookings/${booking.id}/edit`}
+                className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+              >
+                Edit
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+            >
+              Print Folio
+            </button>
+          </div>
         </div>
       </div>
 

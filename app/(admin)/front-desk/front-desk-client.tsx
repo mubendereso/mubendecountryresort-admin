@@ -111,6 +111,12 @@ function BookingCard({
 
         <div className="flex items-center justify-end gap-2">
           <Link
+            href={`/bookings/${booking.id}/edit`}
+            className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+          >
+            Edit
+          </Link>
+          <Link
             href={`/bookings/${booking.id}/folio`}
             className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
           >

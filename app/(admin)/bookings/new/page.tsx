@@ -1,6 +1,6 @@
 import { getRoomTypes } from "@/lib/rooms/data";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
-import { NewBookingForm } from "./new-booking-form";
+import { BookingForm } from "../booking-form";
 
 export default async function NewBookingPage() {
   await requireApprovedAdminRole();
@@ -14,5 +14,5 @@ export default async function NewBookingPage() {
       priceUgx: Number(r.price_ugx)
     }));
 
-  return <NewBookingForm rooms={roomOptions} />;
+  return <BookingForm mode="create" rooms={roomOptions} />;
 }

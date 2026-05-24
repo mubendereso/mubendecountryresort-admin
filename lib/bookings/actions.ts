@@ -157,3 +157,79 @@ export async function createStaffBookingAction(
     return { ok: false, error: "Booking could not be created. Please try again." };
   }
 }
+
+// Edit a confirmed or checked-in booking (room, dates, guests, contact).
+// Online-only: the RPC locks room_types and re-checks availability,
+// and reconciles the folio accommodation charge for in-house guests.
+export async function modifyBookingAction(
+  formData: FormData
+): Promise<CreateStaffBookingResult> {
+  await requireApprovedAdminRole();
+
+  const bookingId = String(formData.get("bookingId") ?? "").trim();
+  const roomTypeSlug = String(formData.get("roomTypeSlug") ?? "").trim();
+  const checkIn = String(formData.get("checkIn") ?? "").trim();
+  const checkOut = String(formData.get("checkOut") ?? "").trim();
+  const guestsAdults = Math.max(1, parseInt(String(formData.get("guestsAdults") ?? "1"), 10) || 1);
+  const guestsChildren = Math.max(0, parseInt(String(formData.get("guestsChildren") ?? "0"), 10) || 0);
+  const guestFullName = String(formData.get("guestFullName") ?? "").trim();
+  const guestPhone = String(formData.get("guestPhone") ?? "").trim();
+  const guestEmail = String(formData.get("guestEmail") ?? "").trim().toLowerCase() || null;
+  const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!bookingId) return { ok: false, error: "Missing booking reference." };
+  if (!roomTypeSlug) return { ok: false, error: "Please select a room type." };
+  if (!checkIn || !checkOut) return { ok: false, error: "Please select check-in and check-out dates." };
+  if (checkIn >= checkOut) return { ok: false, error: "Check-out must be after check-in." };
+  if (!guestFullName || guestFullName.length < 2) return { ok: false, error: "Please enter the guest's full name." };
+  if (!guestPhone) return { ok: false, error: "Please enter a contact phone number." };
+  if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+    return { ok: false, error: "Please enter a valid email address (or leave it blank)." };
+  }
+
+  const sql = getSql();
+  try {
+    const rows = (await sql`
+      SELECT booking_id::text, reference, quoted_total_ugx
+      FROM modify_booking(
+        ${bookingId}::uuid,
+        ${roomTypeSlug}::text,
+        ${checkIn}::date,
+        ${checkOut}::date,
+        ${guestsAdults}::int,
+        ${guestsChildren}::int,
+        ${guestFullName}::text,
+        ${guestPhone}::text,
+        ${guestEmail}::text,
+        ${specialRequests}::text,
+        ${notes}::text
+      )
+    `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
+
+    if (!rows[0]) return { ok: false, error: "Booking could not be updated. Please try again." };
+
+    revalidatePath("/dashboard");
+    revalidatePath("/front-desk");
+    revalidatePath("/bookings");
+    revalidatePath(`/bookings/${bookingId}/folio`);
+
+    return { ok: true, bookingId: rows[0].booking_id, reference: rows[0].reference };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (msg.includes("availability") || msg.includes("available")) {
+      return { ok: false, error: "Sorry, that room is not available for the selected dates." };
+    }
+    if (msg.includes("past")) {
+      return { ok: false, error: "Check-in date cannot be in the past." };
+    }
+    if (msg.includes("can be modified")) {
+      return { ok: false, error: "This booking can no longer be edited." };
+    }
+    if (msg.includes("not found")) {
+      return { ok: false, error: "Booking or room type not found." };
+    }
+    console.error("modify_booking failed:", err);
+    return { ok: false, error: "Booking could not be updated. Please try again." };
+  }
+}

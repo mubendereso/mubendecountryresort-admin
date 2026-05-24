@@ -3,9 +3,22 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createStaffBookingAction } from "@/lib/bookings/actions";
+import { createStaffBookingAction, modifyBookingAction } from "@/lib/bookings/actions";
 
-type RoomOption = { slug: string; title: string; priceUgx: number };
+export type RoomOption = { slug: string; title: string; priceUgx: number };
+
+export type BookingFormInitial = {
+  roomSlug: string;
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  children: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  specialRequests: string;
+  notes: string;
+};
 
 function fmtUgx(n: number): string {
   return new Intl.NumberFormat("en-UG").format(n) + " UGX";
@@ -36,15 +49,34 @@ function nightsBetween(checkIn: string, checkOut: string): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
+const FIELD_CLASS =
+  "w-full rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-oliveMuted-400 focus:ring-2 focus:ring-oliveMuted-200";
+const LABEL_CLASS =
+  "text-[11px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500";
+
+export function BookingForm({
+  mode,
+  rooms,
+  bookingId,
+  status,
+  initial
+}: {
+  mode: "create" | "edit";
+  rooms: RoomOption[];
+  bookingId?: string;
+  status?: "confirmed" | "checked_in";
+  initial?: BookingFormInitial;
+}) {
   const router = useRouter();
   const today = todayISO();
+  const isEdit = mode === "edit";
+  const isCheckedIn = status === "checked_in";
 
-  const [roomSlug, setRoomSlug] = useState(rooms[0]?.slug ?? "");
-  const [checkIn, setCheckIn] = useState(today);
-  const [checkOut, setCheckOut] = useState(addDays(today, 1));
-  const [adults, setAdults] = useState(1);
-  const [children, setChildren] = useState(0);
+  const [roomSlug, setRoomSlug] = useState(initial?.roomSlug ?? rooms[0]?.slug ?? "");
+  const [checkIn, setCheckIn] = useState(initial?.checkIn ?? today);
+  const [checkOut, setCheckOut] = useState(initial?.checkOut ?? addDays(today, 1));
+  const [adults, setAdults] = useState(initial?.adults ?? 1);
+  const [children, setChildren] = useState(initial?.children ?? 0);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -55,13 +87,18 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
   const nights = nightsBetween(checkIn, checkOut);
   const total = selectedRoom ? selectedRoom.priceUgx * nights : 0;
 
+  // A checked-in guest may keep a past check-in date; otherwise no past dates.
+  const checkInMin = isCheckedIn ? undefined : today;
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
 
     startTransition(async () => {
-      const result = await createStaffBookingAction(formData);
+      const result = isEdit
+        ? await modifyBookingAction(formData)
+        : await createStaffBookingAction(formData);
       if (result.ok) {
         router.push(`/bookings/${result.bookingId}/folio`);
         router.refresh();
@@ -71,15 +108,10 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
     });
   }
 
-  const fieldClass =
-    "w-full rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-oliveMuted-400 focus:ring-2 focus:ring-oliveMuted-200";
-  const labelClass =
-    "text-[11px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500";
-
   if (rooms.length === 0) {
     return (
       <section className="grid gap-6">
-        <h1 className="text-3xl font-semibold">New Booking</h1>
+        <h1 className="text-3xl font-semibold">{isEdit ? "Edit Booking" : "New Booking"}</h1>
         <div className="surface-card px-5 py-6 text-sm text-oliveMuted-600">
           No published room types are available. Publish a room first.
         </div>
@@ -91,18 +123,27 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
     <section className="grid max-w-3xl gap-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">New Booking</h1>
+          <h1 className="text-3xl font-semibold">{isEdit ? "Edit Booking" : "New Booking"}</h1>
           <p className="mt-2 text-sm text-oliveMuted-600">
-            Create a walk-in or phone reservation. Confirmed immediately; settle payment at the desk via the folio.
+            {isEdit
+              ? "Update room, dates, guest count, or contact details."
+              : "Create a walk-in or phone reservation. Confirmed immediately; settle payment at the desk via the folio."}
           </p>
         </div>
         <Link
-          href="/front-desk"
+          href={isEdit && bookingId ? `/bookings/${bookingId}/folio` : "/front-desk"}
           className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
         >
-          ← Front Desk
+          ← Cancel
         </Link>
       </header>
+
+      {isCheckedIn && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This guest is checked in. Changing the room or dates will update the
+          accommodation charge already posted to the folio.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -111,16 +152,18 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
       )}
 
       <form onSubmit={handleSubmit} className="grid gap-5">
+        {isEdit && bookingId && <input type="hidden" name="bookingId" value={bookingId} />}
+
         {/* Room + dates */}
         <div className="surface-card grid gap-4 p-5">
           <div className="grid gap-1.5">
-            <label htmlFor="roomTypeSlug" className={labelClass}>Room Type</label>
+            <label htmlFor="roomTypeSlug" className={LABEL_CLASS}>Room Type</label>
             <select
               id="roomTypeSlug"
               name="roomTypeSlug"
               value={roomSlug}
               onChange={(e) => setRoomSlug(e.target.value)}
-              className={fieldClass}
+              className={FIELD_CLASS}
               required
             >
               {rooms.map((r) => (
@@ -133,24 +176,24 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <label htmlFor="checkIn" className={labelClass}>Check-in</label>
+              <label htmlFor="checkIn" className={LABEL_CLASS}>Check-in</label>
               <input
                 id="checkIn"
                 name="checkIn"
                 type="date"
                 value={checkIn}
-                min={today}
+                min={checkInMin}
                 onChange={(e) => {
                   const v = e.target.value;
                   setCheckIn(v);
                   if (v >= checkOut) setCheckOut(addDays(v, 1));
                 }}
-                className={fieldClass}
+                className={FIELD_CLASS}
                 required
               />
             </div>
             <div className="grid gap-1.5">
-              <label htmlFor="checkOut" className={labelClass}>Check-out</label>
+              <label htmlFor="checkOut" className={LABEL_CLASS}>Check-out</label>
               <input
                 id="checkOut"
                 name="checkOut"
@@ -158,7 +201,7 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
                 value={checkOut}
                 min={addDays(checkIn, 1)}
                 onChange={(e) => setCheckOut(e.target.value)}
-                className={fieldClass}
+                className={FIELD_CLASS}
                 required
               />
             </div>
@@ -166,7 +209,7 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <label htmlFor="guestsAdults" className={labelClass}>Adults</label>
+              <label htmlFor="guestsAdults" className={LABEL_CLASS}>Adults</label>
               <input
                 id="guestsAdults"
                 name="guestsAdults"
@@ -174,12 +217,12 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
                 min={1}
                 value={adults}
                 onChange={(e) => setAdults(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className={fieldClass}
+                className={FIELD_CLASS}
                 required
               />
             </div>
             <div className="grid gap-1.5">
-              <label htmlFor="guestsChildren" className={labelClass}>Children</label>
+              <label htmlFor="guestsChildren" className={LABEL_CLASS}>Children</label>
               <input
                 id="guestsChildren"
                 name="guestsChildren"
@@ -187,7 +230,7 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
                 min={0}
                 value={children}
                 onChange={(e) => setChildren(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className={fieldClass}
+                className={FIELD_CLASS}
               />
             </div>
           </div>
@@ -196,56 +239,61 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
         {/* Guest details */}
         <div className="surface-card grid gap-4 p-5">
           <div className="grid gap-1.5">
-            <label htmlFor="guestFullName" className={labelClass}>Guest Full Name</label>
+            <label htmlFor="guestFullName" className={LABEL_CLASS}>Guest Full Name</label>
             <input
               id="guestFullName"
               name="guestFullName"
               type="text"
               autoComplete="off"
-              className={fieldClass}
+              defaultValue={initial?.fullName ?? ""}
+              className={FIELD_CLASS}
               required
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <label htmlFor="guestPhone" className={labelClass}>Phone (required)</label>
+              <label htmlFor="guestPhone" className={LABEL_CLASS}>Phone (required)</label>
               <input
                 id="guestPhone"
                 name="guestPhone"
                 type="tel"
                 inputMode="tel"
                 autoComplete="off"
-                className={fieldClass}
+                defaultValue={initial?.phone ?? ""}
+                className={FIELD_CLASS}
                 required
               />
             </div>
             <div className="grid gap-1.5">
-              <label htmlFor="guestEmail" className={labelClass}>Email (optional)</label>
+              <label htmlFor="guestEmail" className={LABEL_CLASS}>Email (optional)</label>
               <input
                 id="guestEmail"
                 name="guestEmail"
                 type="email"
                 autoComplete="off"
-                className={fieldClass}
+                defaultValue={initial?.email ?? ""}
+                className={FIELD_CLASS}
               />
             </div>
           </div>
           <div className="grid gap-1.5">
-            <label htmlFor="specialRequests" className={labelClass}>Special Requests</label>
+            <label htmlFor="specialRequests" className={LABEL_CLASS}>Special Requests</label>
             <textarea
               id="specialRequests"
               name="specialRequests"
               rows={2}
-              className={fieldClass}
+              defaultValue={initial?.specialRequests ?? ""}
+              className={FIELD_CLASS}
             />
           </div>
           <div className="grid gap-1.5">
-            <label htmlFor="notes" className={labelClass}>Internal Notes</label>
+            <label htmlFor="notes" className={LABEL_CLASS}>Internal Notes</label>
             <textarea
               id="notes"
               name="notes"
               rows={2}
-              className={fieldClass}
+              defaultValue={initial?.notes ?? ""}
+              className={FIELD_CLASS}
             />
           </div>
         </div>
@@ -253,7 +301,7 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
         {/* Quote + submit */}
         <div className="surface-card flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
-            <p className={labelClass}>Total</p>
+            <p className={LABEL_CLASS}>Total</p>
             <p className="mt-1 text-2xl font-semibold">{fmtUgx(total)}</p>
             <p className="text-xs text-oliveMuted-500">
               {nights} {nights === 1 ? "night" : "nights"}
@@ -265,7 +313,7 @@ export function NewBookingForm({ rooms }: { rooms: RoomOption[] }) {
             disabled={isPending || nights <= 0}
             className="rounded-2xl bg-oliveMuted-600 px-6 py-3 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500 disabled:opacity-50"
           >
-            {isPending ? "Creating…" : "Create Booking"}
+            {isPending ? "Saving…" : isEdit ? "Save Changes" : "Create Booking"}
           </button>
         </div>
       </form>
