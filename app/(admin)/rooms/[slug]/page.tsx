@@ -3,8 +3,7 @@ import { notFound } from "next/navigation";
 import { updateRoomTypeAction } from "@/lib/rooms/actions";
 import { getRoomTypeBySlug } from "@/lib/rooms/data";
 import { listToTextarea } from "@/lib/rooms/format";
-import { RoomCoverUpload } from "./room-cover-upload";
-import { RoomGalleryManager } from "./room-gallery-manager";
+import { RoomGalleryManager, RoomImageUploader } from "./room-gallery-manager";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
@@ -178,21 +177,12 @@ export default async function EditRoomTypePage({
       </form>
 
       <section className="surface-card grid gap-4 p-5">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Cover image upload</p>
-        {room.cover_image_url ? (
-          <img
-            src={room.cover_image_url}
-            alt={`${room.title} cover`}
-            className="h-40 w-full max-w-md rounded-2xl object-cover"
-          />
-        ) : (
-          <p className="text-sm text-oliveMuted-600">No cover image set yet.</p>
-        )}
-        <RoomCoverUpload roomId={room.id} slug={room.slug} />
+        <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Upload room images</p>
+        <RoomImageUploader roomId={room.id} slug={room.slug} gallery={room.gallery} />
       </section>
 
       <section className="surface-card grid gap-4 p-5">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Gallery images</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Images for this room</p>
         <RoomGalleryManager roomId={room.id} slug={room.slug} gallery={room.gallery} />
       </section>
     </section>
