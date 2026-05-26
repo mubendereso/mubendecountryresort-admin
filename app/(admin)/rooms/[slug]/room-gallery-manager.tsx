@@ -22,6 +22,7 @@ export function RoomGalleryManager({
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -33,7 +34,7 @@ export function RoomGalleryManager({
     event.preventDefault();
     setError(null);
 
-    const files = Array.from(fileRef.current?.files ?? []);
+    const files = selectedFiles;
     if (files.length === 0) {
       setError("Choose one or more images to upload.");
       return;
@@ -62,6 +63,7 @@ export function RoomGalleryManager({
           await uploadRoomGalleryImageAction(formData);
         }
         if (fileRef.current) fileRef.current.value = "";
+        setSelectedFiles([]);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed.");
@@ -124,6 +126,10 @@ export function RoomGalleryManager({
           multiple
           accept="image/jpeg,image/png,image/webp,image/avif"
           disabled={isPending || isFull}
+          onChange={(event) => {
+            setError(null);
+            setSelectedFiles(Array.from(event.currentTarget.files ?? []));
+          }}
           className="text-sm"
         />
         <p className="text-xs text-oliveMuted-600">
@@ -131,6 +137,14 @@ export function RoomGalleryManager({
             ? `Gallery is full (max ${MAX_GALLERY_IMAGES}). Remove an image to add more.`
             : `Select up to ${remaining} image${remaining === 1 ? "" : "s"}. JPEG, PNG, WebP, or AVIF — large photos are resized automatically.`}
         </p>
+        {selectedFiles.length > 0 ? (
+          <div className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-3 text-xs text-oliveMuted-600">
+            <p className="font-semibold text-oliveMuted-700">
+              {selectedFiles.length} image{selectedFiles.length === 1 ? "" : "s"} selected
+            </p>
+            <p className="mt-1 truncate">{selectedFiles.map((file) => file.name).join(", ")}</p>
+          </div>
+        ) : null}
         {progress ? <p className="text-xs font-semibold text-oliveMuted-600">{progress}</p> : null}
         {error ? <p className="text-xs font-semibold text-red-600">{error}</p> : null}
         <div>

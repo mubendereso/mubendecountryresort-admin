@@ -55,3 +55,5 @@ coverage/
 *.local.md
 progress-log.md
 implementation-plan.md
+mempalace.yaml
+entities.json
