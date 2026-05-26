@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { updateRoomTypeAction } from "@/lib/rooms/actions";
 import { getRoomTypeBySlug } from "@/lib/rooms/data";
 import { listToTextarea } from "@/lib/rooms/format";
-import { RoomGalleryManager, RoomImageUploader } from "./room-gallery-manager";
+import { RoomGalleryManager } from "./room-gallery-manager";
+import { RoomImageUploader } from "./room-image-uploader";
 
 function getFirstValue(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
