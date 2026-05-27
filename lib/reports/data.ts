@@ -32,7 +32,9 @@ export async function getReportData(from: string, to: string): Promise<ReportDat
         AND b.check_out > ${from}::date
     ),
     charged AS (
-      SELECT COALESCE(SUM(fc.amount_ugx), 0)::bigint AS total
+      SELECT COALESCE(SUM(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ), 0)::bigint AS total
       FROM folio_charges fc
       WHERE fc.voided_at IS NULL
         AND (fc.posted_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN ${from}::date AND ${to}::date
@@ -80,7 +82,9 @@ export async function getReportData(from: string, to: string): Promise<ReportDat
   const byRoomTypeQuery = sql`
     SELECT
       rt.title AS room_type,
-      COALESCE(SUM(fc.amount_ugx), 0)::bigint AS revenue,
+      COALESCE(SUM(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ), 0)::bigint AS revenue,
       count(fc.id)::int AS charge_count
     FROM folio_charges fc
     JOIN bookings b ON b.id = fc.booking_id
@@ -107,7 +111,9 @@ export async function getReportData(from: string, to: string): Promise<ReportDat
   const byMonthQuery = sql`
     SELECT
       to_char((fc.posted_at AT TIME ZONE 'Africa/Kampala'), 'YYYY-MM') AS month,
-      COALESCE(SUM(fc.amount_ugx), 0)::bigint AS revenue
+      COALESCE(SUM(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ), 0)::bigint AS revenue
     FROM folio_charges fc
     WHERE fc.voided_at IS NULL
       AND (fc.posted_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN ${from}::date AND ${to}::date

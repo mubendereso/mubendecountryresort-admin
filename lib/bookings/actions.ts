@@ -198,8 +198,13 @@ export async function createStaffBookingAction(
         WHERE ${depositAmount}::bigint > 0
         RETURNING booking_id
       )
-      SELECT booking_id::text, reference, quoted_total_ugx
-      FROM created
+      SELECT
+        c.booking_id::text,
+        c.reference,
+        c.quoted_total_ugx,
+        (SELECT count(*) FROM accommodation_charge) AS accommodation_charge_count,
+        (SELECT count(*) FROM deposit_payment) AS deposit_payment_count
+      FROM created c
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
     if (!rows[0]) return { ok: false, error: "Booking could not be created. Please try again." };

@@ -39,6 +39,10 @@ function nights(checkIn: string, checkOut: string): number {
   );
 }
 
+function signedChargeAmount(charge: FolioCharge): number {
+  return charge.category === "discount" ? -charge.amount_ugx : charge.amount_ugx;
+}
+
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<BookingStatus, string> = {
@@ -164,7 +168,7 @@ function ChargesList({
 
           <div className="flex shrink-0 items-center gap-3">
             <p className={`text-sm font-semibold ${charge.voided_at ? "line-through text-oliveMuted-400" : ""}`}>
-              {fmtUgx(charge.amount_ugx)}
+              {charge.category === "discount" ? "-" : ""}{fmtUgx(charge.amount_ugx)}
             </p>
             {!charge.voided_at && role !== "staff" && (
               <button
@@ -385,7 +389,7 @@ export function FolioClient({
 
   const totalCharges = initialFolio.charges
     .filter((c) => !c.voided_at)
-    .reduce((sum, c) => sum + c.amount_ugx, 0);
+    .reduce((sum, c) => sum + signedChargeAmount(c), 0);
   const totalPaid = initialFolio.payments.reduce((sum, p) => sum + p.amount_ugx, 0);
   const balanceDue = totalCharges - totalPaid;
 
