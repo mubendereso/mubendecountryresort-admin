@@ -77,6 +77,7 @@ export function BookingForm({
   const [checkOut, setCheckOut] = useState(initial?.checkOut ?? addDays(today, 1));
   const [adults, setAdults] = useState(initial?.adults ?? 1);
   const [children, setChildren] = useState(initial?.children ?? 0);
+  const [depositAmount, setDepositAmount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -86,6 +87,7 @@ export function BookingForm({
   );
   const nights = nightsBetween(checkIn, checkOut);
   const total = selectedRoom ? selectedRoom.priceUgx * nights : 0;
+  const balanceDue = Math.max(0, total - depositAmount);
 
   // A checked-in guest may keep a past check-in date; otherwise no past dates.
   const checkInMin = isCheckedIn ? undefined : today;
@@ -127,7 +129,7 @@ export function BookingForm({
           <p className="mt-2 text-sm text-oliveMuted-600">
             {isEdit
               ? "Update room, dates, guest count, or contact details."
-              : "Create a walk-in or phone reservation. Confirmed immediately; settle payment at the desk via the folio."}
+              : "Create a walk-in or phone reservation, record any deposit, and send the balance to the folio."}
           </p>
         </div>
         <Link
@@ -298,6 +300,61 @@ export function BookingForm({
           </div>
         </div>
 
+        {!isEdit && (
+          <div className="surface-card grid gap-4 p-5">
+            <div>
+              <p className={LABEL_CLASS}>Deposit Received</p>
+              <p className="mt-1 text-sm text-oliveMuted-600">
+                Optional. When entered, the room charge is posted to the folio now and this payment reduces the balance due.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <label htmlFor="depositAmountUgx" className={LABEL_CLASS}>Amount (UGX)</label>
+                <input
+                  id="depositAmountUgx"
+                  name="depositAmountUgx"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1000}
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                  className={FIELD_CLASS}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <label htmlFor="depositMethod" className={LABEL_CLASS}>Method</label>
+                <select
+                  id="depositMethod"
+                  name="depositMethod"
+                  className={FIELD_CLASS}
+                  disabled={depositAmount <= 0}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="mpesa">Mobile Money</option>
+                  <option value="card">Card</option>
+                  <option value="transfer">Bank Transfer</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <label htmlFor="depositReference" className={LABEL_CLASS}>Payment Reference</label>
+              <input
+                id="depositReference"
+                name="depositReference"
+                type="text"
+                autoComplete="off"
+                placeholder="Receipt, mobile money ID, or note"
+                className={FIELD_CLASS}
+                disabled={depositAmount <= 0}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Quote + submit */}
         <div className="surface-card flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
@@ -307,6 +364,11 @@ export function BookingForm({
               {nights} {nights === 1 ? "night" : "nights"}
               {selectedRoom ? ` × ${fmtUgx(selectedRoom.priceUgx)}` : ""}
             </p>
+            {!isEdit && depositAmount > 0 && (
+              <p className="mt-2 text-sm font-semibold text-oliveMuted-700">
+                Deposit {fmtUgx(depositAmount)} - balance {fmtUgx(balanceDue)}
+              </p>
+            )}
           </div>
           <button
             type="submit"

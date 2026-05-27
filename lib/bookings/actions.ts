@@ -95,7 +95,7 @@ export type CreateStaffBookingResult =
 export async function createStaffBookingAction(
   formData: FormData
 ): Promise<CreateStaffBookingResult> {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
 
   const roomTypeSlug = String(formData.get("roomTypeSlug") ?? "").trim();
   const checkIn = String(formData.get("checkIn") ?? "").trim();
@@ -107,6 +107,9 @@ export async function createStaffBookingAction(
   const guestEmail = String(formData.get("guestEmail") ?? "").trim().toLowerCase() || null;
   const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const depositAmount = Math.round(Number(formData.get("depositAmountUgx") ?? "0"));
+  const depositMethod = String(formData.get("depositMethod") ?? "cash").trim();
+  const depositReference = String(formData.get("depositReference") ?? "").trim() || null;
 
   if (!roomTypeSlug) return { ok: false, error: "Please select a room type." };
   if (!checkIn || !checkOut) return { ok: false, error: "Please select check-in and check-out dates." };
@@ -116,23 +119,71 @@ export async function createStaffBookingAction(
   if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
     return { ok: false, error: "Please enter a valid email address (or leave it blank)." };
   }
+  if (!Number.isFinite(depositAmount) || depositAmount < 0) {
+    return { ok: false, error: "Deposit must be zero or a positive amount." };
+  }
+  if (depositAmount > 0 && !["cash", "mpesa", "card", "transfer"].includes(depositMethod)) {
+    return { ok: false, error: "Please select a valid deposit payment method." };
+  }
 
   const sql = getSql();
   try {
     const rows = (await sql`
-      SELECT booking_id::text, reference, quoted_total_ugx
-      FROM create_staff_booking(
-        ${roomTypeSlug}::text,
-        ${checkIn}::date,
-        ${checkOut}::date,
-        ${guestsAdults}::int,
-        ${guestsChildren}::int,
-        ${guestFullName}::text,
-        ${guestPhone}::text,
-        ${guestEmail}::text,
-        ${specialRequests}::text,
-        ${notes}::text
+      WITH created AS (
+        SELECT booking_id, reference, quoted_total_ugx
+        FROM create_staff_booking(
+          ${roomTypeSlug}::text,
+          ${checkIn}::date,
+          ${checkOut}::date,
+          ${guestsAdults}::int,
+          ${guestsChildren}::int,
+          ${guestFullName}::text,
+          ${guestPhone}::text,
+          ${guestEmail}::text,
+          ${specialRequests}::text,
+          ${notes}::text
+        )
+      ),
+      deposit_guard AS (
+        SELECT CASE
+          WHEN ${depositAmount}::bigint > quoted_total_ugx THEN 1 / 0
+          ELSE 1
+        END AS ok
+        FROM created
+      ),
+      accommodation_charge AS (
+        INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
+        SELECT
+          b.id,
+          rt.title || ' – ' ||
+            (b.check_out::date - b.check_in::date)::text ||
+            ' night' ||
+            CASE WHEN (b.check_out::date - b.check_in::date) = 1 THEN '' ELSE 's' END,
+          b.quoted_total_ugx,
+          'accommodation',
+          ${session.userId}::uuid
+        FROM created c
+        JOIN bookings b ON b.id = c.booking_id
+        JOIN room_types rt ON rt.id = b.room_type_id
+        CROSS JOIN deposit_guard
+        WHERE ${depositAmount}::bigint > 0
+        RETURNING booking_id
+      ),
+      deposit_payment AS (
+        INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
+        SELECT
+          c.booking_id,
+          ${depositAmount}::bigint,
+          ${depositMethod},
+          ${depositReference},
+          ${session.userId}::uuid
+        FROM created c
+        CROSS JOIN deposit_guard
+        WHERE ${depositAmount}::bigint > 0
+        RETURNING booking_id
       )
+      SELECT booking_id::text, reference, quoted_total_ugx
+      FROM created
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
     if (!rows[0]) return { ok: false, error: "Booking could not be created. Please try again." };
@@ -149,6 +200,9 @@ export async function createStaffBookingAction(
     }
     if (msg.includes("past")) {
       return { ok: false, error: "Check-in date cannot be in the past." };
+    }
+    if (msg.includes("division by zero")) {
+      return { ok: false, error: "Deposit cannot be greater than the booking total." };
     }
     if (msg.includes("not found")) {
       return { ok: false, error: "That room type is no longer available." };
