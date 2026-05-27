@@ -12,6 +12,12 @@ const VALID_TRANSITIONS: Partial<Record<BookingStatus, BookingStatus[]>> = {
   checked_in: ["checked_out", "cancelled"]
 };
 
+function nightsBetween(checkIn: string, checkOut: string): number {
+  const start = new Date(`${checkIn}T00:00:00Z`);
+  const end = new Date(`${checkOut}T00:00:00Z`);
+  return Math.round((end.getTime() - start.getTime()) / 86400000);
+}
+
 export async function updateBookingStatusAction(formData: FormData): Promise<void> {
   const session = await requireApprovedAdminRole();
   const id = formData.get("id") as string;
@@ -107,7 +113,7 @@ export async function createStaffBookingAction(
   const guestEmail = String(formData.get("guestEmail") ?? "").trim().toLowerCase() || null;
   const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  const depositAmount = Math.round(Number(formData.get("depositAmountUgx") ?? "0"));
+  const depositAmount = Math.round(Number(String(formData.get("depositAmountUgx") ?? "0").replace(/[,\s]/g, "")));
   const depositMethod = String(formData.get("depositMethod") ?? "cash").trim();
   const depositReference = String(formData.get("depositReference") ?? "").trim() || null;
 
@@ -128,6 +134,25 @@ export async function createStaffBookingAction(
 
   const sql = getSql();
   try {
+    if (depositAmount > 0) {
+      const quoteRows = (await sql`
+        SELECT price_ugx
+        FROM room_types
+        WHERE slug = ${roomTypeSlug}
+          AND is_published = true
+        LIMIT 1
+      `) as { price_ugx: string }[];
+
+      if (!quoteRows[0]) {
+        return { ok: false, error: "That room type is no longer available." };
+      }
+
+      const quotedTotal = Number(quoteRows[0].price_ugx) * nightsBetween(checkIn, checkOut);
+      if (depositAmount > quotedTotal) {
+        return { ok: false, error: "Deposit cannot be greater than the booking total." };
+      }
+    }
+
     const rows = (await sql`
       WITH created AS (
         SELECT booking_id, reference, quoted_total_ugx
@@ -144,13 +169,6 @@ export async function createStaffBookingAction(
           ${notes}::text
         )
       ),
-      deposit_guard AS (
-        SELECT CASE
-          WHEN ${depositAmount}::bigint > quoted_total_ugx THEN 1 / 0
-          ELSE 1
-        END AS ok
-        FROM created
-      ),
       accommodation_charge AS (
         INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
         SELECT
@@ -165,7 +183,6 @@ export async function createStaffBookingAction(
         FROM created c
         JOIN bookings b ON b.id = c.booking_id
         JOIN room_types rt ON rt.id = b.room_type_id
-        CROSS JOIN deposit_guard
         WHERE ${depositAmount}::bigint > 0
         RETURNING booking_id
       ),
@@ -178,7 +195,6 @@ export async function createStaffBookingAction(
           ${depositReference},
           ${session.userId}::uuid
         FROM created c
-        CROSS JOIN deposit_guard
         WHERE ${depositAmount}::bigint > 0
         RETURNING booking_id
       )
@@ -200,9 +216,6 @@ export async function createStaffBookingAction(
     }
     if (msg.includes("past")) {
       return { ok: false, error: "Check-in date cannot be in the past." };
-    }
-    if (msg.includes("division by zero")) {
-      return { ok: false, error: "Deposit cannot be greater than the booking total." };
     }
     if (msg.includes("not found")) {
       return { ok: false, error: "That room type is no longer available." };

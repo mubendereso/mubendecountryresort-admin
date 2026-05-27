@@ -24,6 +24,16 @@ function fmtUgx(n: number): string {
   return new Intl.NumberFormat("en-UG").format(n) + " UGX";
 }
 
+function fmtUgxInput(n: number): string {
+  if (n <= 0) return "";
+  return new Intl.NumberFormat("en-UG").format(n);
+}
+
+function parseUgxInput(value: string): number {
+  const digits = value.replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+}
+
 function todayISO(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -315,12 +325,10 @@ export function BookingForm({
                 <input
                   id="depositAmountUgx"
                   name="depositAmountUgx"
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  min={0}
-                  step={1000}
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                  value={fmtUgxInput(depositAmount)}
+                  onChange={(e) => setDepositAmount(parseUgxInput(e.target.value))}
                   className={FIELD_CLASS}
                 />
               </div>
