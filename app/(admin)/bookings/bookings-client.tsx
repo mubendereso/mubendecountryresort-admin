@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateBookingStatusAction } from "@/lib/bookings/actions";
 import type { AdminRole } from "@/lib/auth/session";
 import type { BookingRow, BookingStatus } from "@/lib/bookings/types";
+import { RoomAssignment } from "../front-desk/room-assignment";
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
 
@@ -181,6 +182,17 @@ function BookingRow({
               </p>
             </div>
           </div>
+
+          {booking.status === "confirmed" || booking.status === "checked_in" ? (
+            <RoomAssignment bookingId={booking.id} assignedUnitName={booking.room_unit_name} />
+          ) : (
+            booking.room_unit_name && (
+              <div className="grid gap-1">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Assigned Room</p>
+                <p className="text-sm">{booking.room_unit_name}</p>
+              </div>
+            )
+          )}
 
           {booking.special_requests && (
             <div className="grid gap-1">

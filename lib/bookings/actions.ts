@@ -281,6 +281,18 @@ export async function modifyBookingAction(
 
     if (!rows[0]) return { ok: false, error: "Booking could not be updated. Please try again." };
 
+    // Clear a room assignment that no longer matches the (possibly changed) room type.
+    await sql`
+      UPDATE bookings b
+      SET room_unit_id = NULL
+      WHERE b.id = ${bookingId}::uuid
+        AND b.room_unit_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM room_units ru
+          WHERE ru.id = b.room_unit_id AND ru.room_type_id = b.room_type_id
+        )
+    `;
+
     revalidatePath("/dashboard");
     revalidatePath("/front-desk");
     revalidatePath("/bookings");

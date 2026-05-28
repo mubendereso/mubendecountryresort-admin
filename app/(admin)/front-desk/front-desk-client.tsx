@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateBookingStatusAction } from "@/lib/bookings/actions";
 import type { BookingStatus } from "@/lib/bookings/types";
 import type { FrontDeskBooking, FrontDeskData } from "@/lib/front-desk/data";
+import { RoomAssignment } from "./room-assignment";
 
 function formatDate(value: string): string {
   const [year, month, day] = value.split("-").map(Number);
@@ -90,6 +91,8 @@ function BookingCard({
             </p>
           </div>
         </div>
+
+        <RoomAssignment bookingId={booking.id} assignedUnitName={booking.room_unit_name} />
 
         {booking.special_requests && (
           <div className="rounded-2xl bg-stoneWarm-50 p-3 text-sm text-oliveMuted-700">

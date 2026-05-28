@@ -457,6 +457,9 @@ export function FolioClient({
             <p className="font-mono text-xs text-oliveMuted-500">{booking.reference}</p>
             <div className="flex flex-wrap gap-4 text-sm text-oliveMuted-600">
               <span>{booking.room_type_title}</span>
+              {booking.room_unit_name && (
+                <span className="font-medium text-oliveMuted-700">Room: {booking.room_unit_name}</span>
+              )}
               <span>
                 {fmtDate(booking.check_in)} → {fmtDate(booking.check_out)}{" "}
                 <span className="text-oliveMuted-400">

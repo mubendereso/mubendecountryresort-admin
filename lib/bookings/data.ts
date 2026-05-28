@@ -25,9 +25,12 @@ export async function getBookingById(id: string): Promise<BookingRow | null> {
       to_char(b.expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at,
       b.quoted_total_ugx,
       b.notes,
+      b.room_unit_id::text,
+      ru.unit_name AS room_unit_name,
       to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
+    LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     WHERE b.id = ${id}::uuid
     LIMIT 1
   `) as BookingRow[];
@@ -54,9 +57,12 @@ export async function listBookings(): Promise<BookingRow[]> {
       to_char(b.expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at,
       b.quoted_total_ugx,
       b.notes,
+      b.room_unit_id::text,
+      ru.unit_name AS room_unit_name,
       to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
+    LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     ORDER BY b.created_at DESC
     LIMIT 300
   `) as BookingRow[];

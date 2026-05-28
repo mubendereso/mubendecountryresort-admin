@@ -25,5 +25,7 @@ export type BookingRow = {
   expires_at: string | null;
   quoted_total_ugx: number;
   notes: string | null;
+  room_unit_id: string | null;
+  room_unit_name: string | null;
   created_at: string; // ISO 8601 UTC
 };

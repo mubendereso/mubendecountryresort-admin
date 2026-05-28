@@ -18,6 +18,8 @@ export type FrontDeskBooking = {
   quoted_total_ugx: number;
   notes: string | null;
   status: BookingStatus;
+  room_unit_id: string | null;
+  room_unit_name: string | null;
 };
 
 export type FrontDeskData = {
@@ -49,9 +51,12 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.special_requests,
       b.quoted_total_ugx,
       b.notes,
-      b.status
+      b.status,
+      b.room_unit_id::text,
+      ru.unit_name AS room_unit_name
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
+    LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     WHERE b.check_in = ${today}::date
       AND b.status = 'confirmed'
     ORDER BY b.created_at ASC
@@ -72,9 +77,12 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.special_requests,
       b.quoted_total_ugx,
       b.notes,
-      b.status
+      b.status,
+      b.room_unit_id::text,
+      ru.unit_name AS room_unit_name
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
+    LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     WHERE b.check_out = ${today}::date
       AND b.status = 'checked_in'
     ORDER BY b.created_at ASC
