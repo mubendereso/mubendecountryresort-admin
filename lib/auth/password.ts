@@ -9,6 +9,19 @@ const SALT_LENGTH_BYTES = 16;
 
 const textEncoder = new TextEncoder();
 
+/**
+ * A valid-format hash that matches no real password. Used to run a PBKDF2
+ * verification on the "no such user / inactive" login path so response timing
+ * does not reveal which emails exist (MCR-SEC-04). The salt/key are all-zero;
+ * `verifyPassword` against it always returns false but burns the same work.
+ */
+export const DUMMY_PASSWORD_HASH = [
+  PASSWORD_HASH_ALGORITHM,
+  String(PASSWORD_HASH_ITERATIONS),
+  "AAAAAAAAAAAAAAAAAAAAAA==",
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+].join("$");
+
 function toBase64(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);

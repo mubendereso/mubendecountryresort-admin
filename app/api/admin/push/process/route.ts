@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { processAdminPushDispatchQueue } from "@/lib/push/admin-booking-notifications";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import {
+  assertSameOriginRequest,
+  AdminAuthorizationError,
+  requireApprovedAdminRole
+} from "@/lib/auth/admin-role";
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     await requireApprovedAdminRole();
     const processed = await processAdminPushDispatchQueue(5);
     return NextResponse.json({ ok: true, processed });

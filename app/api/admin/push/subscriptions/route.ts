@@ -4,11 +4,52 @@ import {
   processAdminPushDispatchQueue,
   reopenNoSubscriberDispatches
 } from "@/lib/push/admin-booking-notifications";
-import { AdminAuthorizationError, requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import {
+  assertSameOriginRequest,
+  AdminAuthorizationError,
+  requireApprovedAdminRole
+} from "@/lib/auth/admin-role";
 import { z } from "zod";
 
+// MCR-SEC-06: only accept push endpoints belonging to the real browser push
+// services. Without this, a subscriber (or CSRF victim) could register an
+// arbitrary https URL that would then receive VAPID-signed POSTs from us.
+const ALLOWED_PUSH_HOST_EXACT = new Set<string>(["fcm.googleapis.com"]);
+const ALLOWED_PUSH_HOST_SUFFIXES = [
+  ".push.services.mozilla.com", // Firefox
+  ".push.apple.com", // Safari / iOS (web.push.apple.com, api.push.apple.com)
+  ".push.services.microsoft.com", // Edge (WNS)
+  ".notify.windows.com" // Windows / WNS
+];
+
+function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol !== "https:") {
+    return false;
+  }
+
+  const host = url.hostname.toLowerCase();
+  if (ALLOWED_PUSH_HOST_EXACT.has(host)) {
+    return true;
+  }
+
+  // Leading-dot suffix match enforces a label boundary, so `evilpush.apple.com`
+  // does NOT match `.push.apple.com` while `web.push.apple.com` does.
+  return ALLOWED_PUSH_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
 const subscriptionSchema = z.object({
-  endpoint: z.string().url().max(2048),
+  endpoint: z
+    .string()
+    .url()
+    .max(2048)
+    .refine(isAllowedPushEndpoint, { message: "Unsupported push endpoint host." }),
   expirationTime: z.number().nullable().optional(),
   keys: z.object({
     p256dh: z.string().min(1).max(512),
@@ -18,6 +59,7 @@ const subscriptionSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    assertSameOriginRequest(request);
     await requireApprovedAdminRole();
 
     const contentLength = request.headers.get("content-length");

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { signInWithPasswordAction } from "@/lib/auth/actions";
+import { sanitizeNextPath } from "@/lib/auth/utils";
 import { getCurrentAdminSession } from "@/lib/auth/session";
 
 function getFirstValue(value?: string | string[]) {
@@ -12,7 +13,7 @@ export default async function LoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const nextPath = getFirstValue(params.next) ?? "/dashboard";
+  const nextPath = sanitizeNextPath(getFirstValue(params.next));
   const message = getFirstValue(params.message) ?? null;
 
   const session = await getCurrentAdminSession();
