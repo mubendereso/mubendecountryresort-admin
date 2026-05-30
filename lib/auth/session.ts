@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { getSql } from "@/lib/db/client";
 
@@ -61,6 +62,14 @@ export async function createAdminSession(userId: string) {
     values (${tokenHash}, ${userId}, ${expiresAt.toISOString()})
   `;
 
+  // MCR-SEC-07: opportunistically purge expired sessions so the table can't
+  // grow unbounded. Cheap (uses the expires_at index) at admin-login volume,
+  // and avoids needing a separate cron.
+  await sql`
+    delete from admin_sessions
+    where expires_at <= now()
+  `;
+
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -70,7 +79,10 @@ export async function createAdminSession(userId: string) {
   });
 }
 
-export async function getCurrentAdminSession(): Promise<AdminSession | null> {
+// MCR-PERF-02: deduped with React cache() so the layout, page, and any nested
+// server components share one Neon round trip per request instead of each
+// re-querying the session.
+export const getCurrentAdminSession = cache(async (): Promise<AdminSession | null> => {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
@@ -107,7 +119,7 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
     fullName: session.full_name,
     role: session.role
   };
-}
+});
 
 export async function destroyCurrentAdminSession() {
   const cookieStore = await cookies();

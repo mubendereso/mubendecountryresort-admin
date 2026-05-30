@@ -36,7 +36,10 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     SELECT (now() AT TIME ZONE 'Africa/Kampala')::date::text AS today
   `) as { today: string }[];
 
-  const arrivals = (await sql`
+  // MCR-PERF-03: arrivals, departures, and the in-house count are independent
+  // once `today` is known, so issue them concurrently instead of serially.
+  const [arrivals, departures, [{ in_house_count }]] = (await Promise.all([
+    sql`
     SELECT
       b.id::text,
       b.reference,
@@ -60,9 +63,8 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     WHERE b.check_in = ${today}::date
       AND b.status = 'confirmed'
     ORDER BY b.created_at ASC
-  `) as FrontDeskBooking[];
-
-  const departures = (await sql`
+  `,
+    sql`
     SELECT
       b.id::text,
       b.reference,
@@ -86,13 +88,13 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     WHERE b.check_out = ${today}::date
       AND b.status = 'checked_in'
     ORDER BY b.created_at ASC
-  `) as FrontDeskBooking[];
-
-  const [{ in_house_count }] = (await sql`
+  `,
+    sql`
     SELECT count(*)::int AS in_house_count
     FROM bookings
     WHERE status = 'checked_in'
-  `) as { in_house_count: number }[];
+  `
+  ])) as unknown as [FrontDeskBooking[], FrontDeskBooking[], { in_house_count: number }[]];
 
   return {
     today,
