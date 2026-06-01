@@ -24,13 +24,15 @@ function fmtDate(d: string): string {
 function GuestCard({ guest }: { guest: GuestSummary }) {
   return (
     <Link
-      href={`/guests/${encodeURIComponent(guest.guest_email)}`}
+      href={`/guests/${encodeURIComponent(guest.guest_key)}`}
       className="surface-card block p-5 transition hover:bg-stoneWarm-50"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="grid min-w-0 gap-1">
           <p className="font-semibold">{guest.guest_full_name}</p>
-          <p className="text-sm text-oliveMuted-600">{guest.guest_email}</p>
+          {guest.guest_email && (
+            <p className="text-sm text-oliveMuted-600">{guest.guest_email}</p>
+          )}
           {guest.guest_phone && (
             <p className="text-sm text-oliveMuted-500">{guest.guest_phone}</p>
           )}
@@ -82,7 +84,7 @@ export function GuestsClient({ guests }: { guests: GuestSummary[] }) {
       ? guests.filter(
           (g) =>
             g.guest_full_name.toLowerCase().includes(q) ||
-            g.guest_email.toLowerCase().includes(q) ||
+            (g.guest_email ?? "").toLowerCase().includes(q) ||
             (g.guest_phone ?? "").includes(q)
         )
       : guests;
@@ -141,7 +143,7 @@ export function GuestsClient({ guests }: { guests: GuestSummary[] }) {
       ) : (
         <div className="grid gap-2">
           {displayed.map((guest) => (
-            <GuestCard key={guest.guest_email} guest={guest} />
+            <GuestCard key={guest.guest_key} guest={guest} />
           ))}
         </div>
       )}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getGuestProfile, listBookingsByEmail } from "@/lib/guests/data";
+import { getGuestProfile, listBookingsByGuestKey } from "@/lib/guests/data";
 import type { BookingRow, BookingStatus } from "@/lib/bookings/types";
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
@@ -99,15 +99,15 @@ function StayRow({ booking }: { booking: BookingRow }) {
 export default async function GuestDetailPage({
   params
 }: {
-  params: Promise<{ email: string }>;
+  params: Promise<{ key: string }>;
 }) {
-  const { email } = await params;
+  const { key } = await params;
   // Next.js decodes route params automatically; re-decode in case of double-encoding
-  const decodedEmail = decodeURIComponent(email);
+  const decodedKey = decodeURIComponent(key);
 
   const [profile, bookings] = await Promise.all([
-    getGuestProfile(decodedEmail),
-    listBookingsByEmail(decodedEmail)
+    getGuestProfile(decodedKey),
+    listBookingsByGuestKey(decodedKey)
   ]);
 
   if (!profile) notFound();
@@ -132,12 +132,14 @@ export default async function GuestDetailPage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="grid gap-1">
             <h1 className="text-2xl font-semibold">{profile.guest_full_name}</h1>
-            <a
-              href={`mailto:${profile.guest_email}`}
-              className="text-sm text-oliveMuted-600 hover:underline"
-            >
-              {profile.guest_email}
-            </a>
+            {profile.guest_email && (
+              <a
+                href={`mailto:${profile.guest_email}`}
+                className="text-sm text-oliveMuted-600 hover:underline"
+              >
+                {profile.guest_email}
+              </a>
+            )}
             {profile.guest_phone && (
               <a
                 href={`tel:${profile.guest_phone}`}

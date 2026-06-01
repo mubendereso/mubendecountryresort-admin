@@ -10,15 +10,17 @@ export async function listGuests(): Promise<GuestSummary[]> {
   const sql = getSql();
   return (await sql`
     WITH latest AS (
-      SELECT DISTINCT ON (guest_email)
+      SELECT DISTINCT ON (COALESCE(guest_email, guest_phone))
+        COALESCE(guest_email, guest_phone) AS guest_key,
         guest_email,
         guest_full_name,
         guest_phone
       FROM bookings
-      WHERE guest_email IS NOT NULL
-      ORDER BY guest_email, created_at DESC
+      WHERE COALESCE(guest_email, guest_phone) IS NOT NULL
+      ORDER BY COALESCE(guest_email, guest_phone), created_at DESC
     )
     SELECT
+      l.guest_key,
       l.guest_email,
       l.guest_full_name,
       l.guest_phone,
@@ -32,25 +34,27 @@ export async function listGuests(): Promise<GuestSummary[]> {
       MIN(b.check_in)::text                                                    AS first_visit,
       MAX(b.check_in)::text                                                    AS last_visit
     FROM latest l
-    JOIN bookings b ON b.guest_email = l.guest_email
-    GROUP BY l.guest_email, l.guest_full_name, l.guest_phone
+    JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
+    GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
     ORDER BY MAX(b.created_at) DESC
   `) as GuestSummary[];
 }
 
-export async function getGuestProfile(email: string): Promise<GuestSummary | null> {
+export async function getGuestProfile(key: string): Promise<GuestSummary | null> {
   const sql = getSql();
   const rows = (await sql`
     WITH latest AS (
-      SELECT DISTINCT ON (guest_email)
+      SELECT DISTINCT ON (COALESCE(guest_email, guest_phone))
+        COALESCE(guest_email, guest_phone) AS guest_key,
         guest_email,
         guest_full_name,
         guest_phone
       FROM bookings
-      WHERE guest_email = ${email}
-      ORDER BY guest_email, created_at DESC
+      WHERE COALESCE(guest_email, guest_phone) = ${key}
+      ORDER BY COALESCE(guest_email, guest_phone), created_at DESC
     )
     SELECT
+      l.guest_key,
       l.guest_email,
       l.guest_full_name,
       l.guest_phone,
@@ -64,13 +68,13 @@ export async function getGuestProfile(email: string): Promise<GuestSummary | nul
       MIN(b.check_in)::text                                                    AS first_visit,
       MAX(b.check_in)::text                                                    AS last_visit
     FROM latest l
-    JOIN bookings b ON b.guest_email = l.guest_email
-    GROUP BY l.guest_email, l.guest_full_name, l.guest_phone
+    JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
+    GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
   `) as GuestSummary[];
   return rows[0] ?? null;
 }
 
-export async function listBookingsByEmail(email: string): Promise<BookingRow[]> {
+export async function listBookingsByGuestKey(key: string): Promise<BookingRow[]> {
   const sql = getSql();
   return (await sql`
     SELECT
@@ -93,7 +97,7 @@ export async function listBookingsByEmail(email: string): Promise<BookingRow[]> 
       to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
-    WHERE b.guest_email = ${email}
+    WHERE COALESCE(b.guest_email, b.guest_phone) = ${key}
     ORDER BY b.check_in DESC
   `) as BookingRow[];
 }
