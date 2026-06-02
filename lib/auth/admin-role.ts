@@ -46,6 +46,19 @@ const ALLOWED_REQUEST_ORIGINS = new Set<string>(
     .filter(Boolean)
 );
 
+function isLocalDevHost(host: string): boolean {
+  const normalized = host.toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "[::1]" ||
+    normalized === "::1" ||
+    normalized.startsWith("localhost:") ||
+    normalized.startsWith("127.0.0.1:") ||
+    normalized.startsWith("[::1]:")
+  );
+}
+
 export function assertSameOriginRequest(request: Request) {
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
@@ -67,6 +80,9 @@ export function assertSameOriginRequest(request: Request) {
     const host = request.headers.get("host");
     if (!host) {
       throw new AdminAuthorizationError("Missing request host.", 403);
+    }
+    if (!isLocalDevHost(host)) {
+      throw new AdminAuthorizationError("Admin allowed origins are not configured.", 403);
     }
 
     const expected = `https://${host}`;

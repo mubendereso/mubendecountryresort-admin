@@ -22,6 +22,9 @@ const VALID_METHODS: PaymentMethod[] = [
   "transfer"
 ];
 
+const MAX_DESCRIPTION_LENGTH = 300;
+const MAX_PAYMENT_REFERENCE_LENGTH = 200;
+
 export async function postChargeAction(formData: FormData): Promise<void> {
   const session = await requireApprovedAdminRole();
 
@@ -32,6 +35,9 @@ export async function postChargeAction(formData: FormData): Promise<void> {
 
   if (!bookingId) throw new Error("Missing booking ID.");
   if (!description) throw new Error("Description is required.");
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new Error("Description is too long.");
+  }
   if (!VALID_CATEGORIES.includes(category)) throw new Error("Invalid category.");
 
   const amount = Math.round(Number(amountStr));
@@ -86,6 +92,9 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
 
   if (!bookingId) throw new Error("Missing booking ID.");
   if (!VALID_METHODS.includes(method)) throw new Error("Invalid payment method.");
+  if ((reference?.length ?? 0) > MAX_PAYMENT_REFERENCE_LENGTH) {
+    throw new Error("Payment reference is too long.");
+  }
 
   const amount = Math.round(Number(amountStr));
   if (!Number.isFinite(amount) || amount <= 0) {

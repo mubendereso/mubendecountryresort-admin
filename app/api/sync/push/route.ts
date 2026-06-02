@@ -14,6 +14,8 @@ import {
 } from "@/lib/sync/mutations";
 import type { MutationResult, PushResponse, QueuedMutation } from "@/lib/sync/protocol";
 
+const MAX_PUSH_BODY_BYTES = 512 * 1024;
+
 const pushSchema = z.object({
   mutations: z
     .array(
@@ -109,6 +111,11 @@ export async function POST(request: NextRequest) {
   try {
     assertSameOriginRequest(request);
     const session = await requireApprovedAdminRole();
+
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && Number(contentLength) > MAX_PUSH_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large." }, { status: 413 });
+    }
 
     const parsed = pushSchema.safeParse(await request.json());
     if (!parsed.success) {

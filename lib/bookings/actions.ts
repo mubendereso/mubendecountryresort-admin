@@ -12,10 +12,37 @@ const VALID_TRANSITIONS: Partial<Record<BookingStatus, BookingStatus[]>> = {
   checked_in: ["checked_out", "cancelled"]
 };
 
+const MAX_ROOM_TYPE_SLUG_LENGTH = 120;
+const MAX_GUEST_NAME_LENGTH = 120;
+const MAX_GUEST_EMAIL_LENGTH = 200;
+const MAX_GUEST_PHONE_LENGTH = 40;
+const MAX_SPECIAL_REQUESTS_LENGTH = 1000;
+const MAX_NOTES_LENGTH = 2000;
+const MAX_PAYMENT_REFERENCE_LENGTH = 200;
+
 function nightsBetween(checkIn: string, checkOut: string): number {
   const start = new Date(`${checkIn}T00:00:00Z`);
   const end = new Date(`${checkOut}T00:00:00Z`);
   return Math.round((end.getTime() - start.getTime()) / 86400000);
+}
+
+function validateBookingTextFields(input: {
+  roomTypeSlug: string;
+  guestFullName: string;
+  guestPhone: string;
+  guestEmail: string | null;
+  specialRequests: string | null;
+  notes: string | null;
+}): string | null {
+  if (input.roomTypeSlug.length > MAX_ROOM_TYPE_SLUG_LENGTH) return "Please select a valid room type.";
+  if (input.guestFullName.length > MAX_GUEST_NAME_LENGTH) return "Please enter a shorter guest name.";
+  if (input.guestPhone.length > MAX_GUEST_PHONE_LENGTH) return "Please enter a shorter phone number.";
+  if ((input.guestEmail?.length ?? 0) > MAX_GUEST_EMAIL_LENGTH) return "Please enter a shorter email address.";
+  if ((input.specialRequests?.length ?? 0) > MAX_SPECIAL_REQUESTS_LENGTH) {
+    return "Please keep special requests under 1000 characters.";
+  }
+  if ((input.notes?.length ?? 0) > MAX_NOTES_LENGTH) return "Please keep notes under 2000 characters.";
+  return null;
 }
 
 export async function updateBookingStatusAction(formData: FormData): Promise<void> {
@@ -125,8 +152,20 @@ export async function createStaffBookingAction(
   if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
     return { ok: false, error: "Please enter a valid email address (or leave it blank)." };
   }
+  const textError = validateBookingTextFields({
+    roomTypeSlug,
+    guestFullName,
+    guestPhone,
+    guestEmail,
+    specialRequests,
+    notes
+  });
+  if (textError) return { ok: false, error: textError };
   if (!Number.isFinite(depositAmount) || depositAmount < 0) {
     return { ok: false, error: "Deposit must be zero or a positive amount." };
+  }
+  if ((depositReference?.length ?? 0) > MAX_PAYMENT_REFERENCE_LENGTH) {
+    return { ok: false, error: "Deposit reference is too long." };
   }
   if (depositAmount > 0 && !["cash", "mpesa", "card", "transfer"].includes(depositMethod)) {
     return { ok: false, error: "Please select a valid deposit payment method." };
@@ -259,6 +298,15 @@ export async function modifyBookingAction(
   if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
     return { ok: false, error: "Please enter a valid email address (or leave it blank)." };
   }
+  const textError = validateBookingTextFields({
+    roomTypeSlug,
+    guestFullName,
+    guestPhone,
+    guestEmail,
+    specialRequests,
+    notes
+  });
+  if (textError) return { ok: false, error: textError };
 
   const sql = getSql();
   try {

@@ -3,9 +3,9 @@
 #
 # In production, set these via:
 #   wrangler secret put DATABASE_URL
-#   wrangler secret put ADMIN_ALLOWED_ORIGINS   (if used)
+#   wrangler secret put ADMIN_ALLOWED_ORIGINS
 
 DATABASE_URL=
 
-# Optional, same semantics as in .env.local
+# Required outside localhost. Comma-separated exact origins allowed to POST.
 # ADMIN_ALLOWED_ORIGINS=https://admin.mubendecountryresort.com

@@ -2,6 +2,12 @@ import "server-only";
 
 import { getSql } from "@/lib/db/client";
 
+const RATE_LIMIT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const RATE_LIMIT_PRUNE_SAMPLE_RATE = 0.01;
+const RATE_LIMIT_PRUNE_OLDER_THAN_SECONDS = 24 * 60 * 60;
+
+let lastPruneAttemptAt = 0;
+
 /**
  * Resolve the caller's IP for rate-limit keying.
  *
@@ -32,6 +38,21 @@ export function getClientIp(headers: Headers): string {
   return "unknown";
 }
 
+async function maybePruneRateLimits(): Promise<void> {
+  const now = Date.now();
+  if (now - lastPruneAttemptAt < RATE_LIMIT_PRUNE_INTERVAL_MS) return;
+  if (Math.random() > RATE_LIMIT_PRUNE_SAMPLE_RATE) return;
+
+  lastPruneAttemptAt = now;
+
+  try {
+    const sql = getSql();
+    await sql`select public.prune_rate_limits(${RATE_LIMIT_PRUNE_OLDER_THAN_SECONDS})`;
+  } catch (error) {
+    console.error("pruneRateLimits failed:", error);
+  }
+}
+
 /**
  * Consume one hit against a rate-limit key.
  *
@@ -54,6 +75,7 @@ export async function consumeRateLimit(
     const rows = (await sql`
       select public.consume_rate_limit(${key}, ${max}, ${windowSeconds}) as allowed
     `) as { allowed: boolean }[];
+    await maybePruneRateLimits();
     return rows[0]?.allowed ?? failOpen;
   } catch (error) {
     console.error(`consumeRateLimit failed; ${failOpen ? "allowing" : "blocking"} request:`, error);

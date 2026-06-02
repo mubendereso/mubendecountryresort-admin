@@ -11,21 +11,32 @@ import { deleteObject, keyFromPublicUrl } from "@/lib/storage/r2";
 
 // Maximum number of gallery images per room.
 const MAX_GALLERY_IMAGES = 15;
+const MAX_SLUG_LENGTH = 120;
+const MAX_TITLE_LENGTH = 160;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_OVERVIEW_LENGTH = 3000;
+const MAX_URL_LENGTH = 2048;
+const MAX_LIST_ITEMS = 50;
+const MAX_LIST_ITEM_LENGTH = 300;
+
+const listSchema = z
+  .array(z.string().trim().min(1).max(MAX_LIST_ITEM_LENGTH))
+  .max(MAX_LIST_ITEMS);
 
 const roomTypeSchema = z.object({
   id: z.string().uuid(),
-  slug: z.string().trim().min(1),
-  title: z.string().trim().min(1, "Title is required."),
-  description: z.string().trim().optional(),
-  overview: z.string().trim().optional(),
+  slug: z.string().trim().min(1).max(MAX_SLUG_LENGTH),
+  title: z.string().trim().min(1, "Title is required.").max(MAX_TITLE_LENGTH),
+  description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).optional(),
+  overview: z.string().trim().max(MAX_OVERVIEW_LENGTH).optional(),
   price_ugx: z.coerce.number().int().positive("Price must be greater than zero."),
-  cover_image_url: z.string().trim().optional(),
+  cover_image_url: z.string().trim().max(MAX_URL_LENGTH).optional(),
   inventory_count: z.coerce.number().int().min(0, "Inventory cannot be negative."),
   sort_order: z.coerce.number().int(),
   is_published: z.boolean(),
-  details: z.array(z.string()),
-  amenities: z.array(z.string()),
-  dining_hours: z.array(z.string())
+  details: listSchema,
+  amenities: listSchema,
+  dining_hours: listSchema
   // gallery is managed separately via the gallery upload/remove actions so the
   // core form save does not overwrite uploaded images.
 });
