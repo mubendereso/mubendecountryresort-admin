@@ -38,24 +38,25 @@ export function getClientIp(headers: Headers): string {
  * @param key            Limiter key, e.g. `login:ip:1.2.3.4` or `login:email:a@b.c`.
  * @param max            Max hits allowed within the window.
  * @param windowSeconds  Window length in seconds.
+ * @param options.failOpen  Whether DB errors should allow the request.
  * @returns `true` if the request is allowed, `false` if the limit is exceeded.
- *
- * Fails OPEN: if the database call errors, the request is allowed so a DB
- * blip cannot lock everyone out. The error is logged for visibility.
  */
 export async function consumeRateLimit(
   key: string,
   max: number,
-  windowSeconds: number
+  windowSeconds: number,
+  options: { failOpen?: boolean } = {}
 ): Promise<boolean> {
+  const failOpen = options.failOpen ?? true;
+
   try {
     const sql = getSql();
     const rows = (await sql`
       select public.consume_rate_limit(${key}, ${max}, ${windowSeconds}) as allowed
     `) as { allowed: boolean }[];
-    return rows[0]?.allowed ?? true;
+    return rows[0]?.allowed ?? failOpen;
   } catch (error) {
-    console.error("consumeRateLimit failed; allowing request (fail-open):", error);
-    return true;
+    console.error(`consumeRateLimit failed; ${failOpen ? "allowing" : "blocking"} request:`, error);
+    return failOpen;
   }
 }

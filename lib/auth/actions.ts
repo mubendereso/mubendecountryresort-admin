@@ -12,7 +12,8 @@ import { consumeRateLimit, getClientIp } from "@/lib/rate-limit";
 // the internet-facing login: one per source IP (kills single-host brute
 // force) and one per email (kills distributed brute force against one
 // account). Thresholds are generous enough that a real admin retyping a
-// password will not trip them. Both fail-open if the DB is unreachable.
+// password will not trip them. The login path fails closed if the limiter DB
+// call errors, so DB stress cannot disable credential-stuffing protection.
 const LOGIN_IP_MAX_ATTEMPTS = 12;
 const LOGIN_IP_WINDOW_SECONDS = 600; // 10 minutes
 const LOGIN_EMAIL_MAX_ATTEMPTS = 8;
@@ -57,8 +58,12 @@ export async function signInWithPasswordAction(formData: FormData) {
   // attempt counts against the IP and the targeted email simultaneously.
   const clientIp = getClientIp(await headers());
   const [ipAllowed, emailAllowed] = await Promise.all([
-    consumeRateLimit(`login:ip:${clientIp}`, LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS),
-    consumeRateLimit(`login:email:${email}`, LOGIN_EMAIL_MAX_ATTEMPTS, LOGIN_EMAIL_WINDOW_SECONDS)
+    consumeRateLimit(`login:ip:${clientIp}`, LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS, {
+      failOpen: false
+    }),
+    consumeRateLimit(`login:email:${email}`, LOGIN_EMAIL_MAX_ATTEMPTS, LOGIN_EMAIL_WINDOW_SECONDS, {
+      failOpen: false
+    })
   ]);
 
   if (!ipAllowed || !emailAllowed) {
