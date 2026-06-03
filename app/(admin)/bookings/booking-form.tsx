@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { createStaffBookingAction, modifyBookingAction } from "@/lib/bookings/actions";
 
 export type RoomOption = { slug: string; title: string; priceUgx: number };
@@ -22,16 +23,6 @@ export type BookingFormInitial = {
 
 function fmtUgx(n: number): string {
   return new Intl.NumberFormat("en-UG").format(n) + " UGX";
-}
-
-function fmtUgxInput(n: number): string {
-  if (n <= 0) return "";
-  return new Intl.NumberFormat("en-UG").format(n);
-}
-
-function parseUgxInput(value: string): number {
-  const digits = value.replace(/\D/g, "");
-  return digits ? Number(digits) : 0;
 }
 
 function todayISO(): string {
@@ -322,13 +313,11 @@ export function BookingForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <label htmlFor="depositAmountUgx" className={LABEL_CLASS}>Amount (UGX)</label>
-                <input
+                <UgxAmountInput
                   id="depositAmountUgx"
                   name="depositAmountUgx"
-                  type="text"
-                  inputMode="numeric"
-                  value={fmtUgxInput(depositAmount)}
-                  onChange={(e) => setDepositAmount(parseUgxInput(e.target.value))}
+                  value={depositAmount}
+                  onValueChange={setDepositAmount}
                   className={FIELD_CLASS}
                 />
               </div>

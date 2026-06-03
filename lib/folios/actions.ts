@@ -25,12 +25,17 @@ const VALID_METHODS: PaymentMethod[] = [
 const MAX_DESCRIPTION_LENGTH = 300;
 const MAX_PAYMENT_REFERENCE_LENGTH = 200;
 
+function parseUgxAmount(value: FormDataEntryValue | null): number {
+  const normalized = String(value ?? "").trim().replace(/[,\s]/g, "");
+  if (!/^\d+$/.test(normalized)) return Number.NaN;
+  return Math.round(Number(normalized));
+}
+
 export async function postChargeAction(formData: FormData): Promise<void> {
   const session = await requireApprovedAdminRole();
 
   const bookingId = formData.get("booking_id") as string;
   const description = (formData.get("description") as string)?.trim();
-  const amountStr = formData.get("amount_ugx") as string;
   const category = formData.get("category") as FolioCategory;
 
   if (!bookingId) throw new Error("Missing booking ID.");
@@ -40,7 +45,7 @@ export async function postChargeAction(formData: FormData): Promise<void> {
   }
   if (!VALID_CATEGORIES.includes(category)) throw new Error("Invalid category.");
 
-  const amount = Math.round(Number(amountStr));
+  const amount = parseUgxAmount(formData.get("amount_ugx"));
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Amount must be a positive number.");
   }
@@ -86,7 +91,6 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
   const session = await requireApprovedAdminRole();
 
   const bookingId = formData.get("booking_id") as string;
-  const amountStr = formData.get("amount_ugx") as string;
   const method = formData.get("method") as PaymentMethod;
   const reference = (formData.get("reference") as string)?.trim() || null;
 
@@ -96,7 +100,7 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
     throw new Error("Payment reference is too long.");
   }
 
-  const amount = Math.round(Number(amountStr));
+  const amount = parseUgxAmount(formData.get("amount_ugx"));
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Amount must be a positive number.");
   }

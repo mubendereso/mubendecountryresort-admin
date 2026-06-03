@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { postChargeAction, voidChargeAction, recordPaymentAction } from "@/lib/folios/actions";
 import type { AdminRole } from "@/lib/auth/session";
 import type { BookingRow, BookingStatus } from "@/lib/bookings/types";
@@ -271,12 +272,10 @@ function PostChargeForm({
           className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
         />
 
-        <input
+        <UgxAmountInput
           name="amount_ugx"
-          type="number"
           required
-          min="1"
-          step="1"
+          minLength={1}
           placeholder="Amount (UGX)"
           className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
         />
@@ -337,12 +336,10 @@ function RecordPaymentForm({
           <option value="pesapal">Pesapal</option>
         </select>
 
-        <input
+        <UgxAmountInput
           name="amount_ugx"
-          type="number"
           required
-          min="1"
-          step="1"
+          minLength={1}
           placeholder="Amount (UGX)"
           className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
         />
