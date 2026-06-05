@@ -306,7 +306,7 @@ export function BookingForm({
             <div>
               <p className={LABEL_CLASS}>Deposit Received</p>
               <p className="mt-1 text-sm text-oliveMuted-600">
-                Optional. When entered, the room charge is posted to the folio now and this payment reduces the balance due.
+                Optional. The room total is posted to Total Charges; when entered, this payment is recorded in Total Paid and reduces Balance Due.
               </p>
             </div>
 

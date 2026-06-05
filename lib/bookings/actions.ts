@@ -222,7 +222,6 @@ export async function createStaffBookingAction(
         FROM created c
         JOIN bookings b ON b.id = c.booking_id
         JOIN room_types rt ON rt.id = b.room_type_id
-        WHERE ${depositAmount}::bigint > 0
         RETURNING booking_id
       ),
       deposit_payment AS (
@@ -271,11 +270,11 @@ export async function createStaffBookingAction(
 
 // Edit a confirmed or checked-in booking (room, dates, guests, contact).
 // Online-only: the RPC locks room_types and re-checks availability,
-// and reconciles the folio accommodation charge for in-house guests.
+// and reconciles the folio accommodation charge.
 export async function modifyBookingAction(
   formData: FormData
 ): Promise<CreateStaffBookingResult> {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
 
   const bookingId = String(formData.get("bookingId") ?? "").trim();
   const roomTypeSlug = String(formData.get("roomTypeSlug") ?? "").trim();
@@ -328,6 +327,47 @@ export async function modifyBookingAction(
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
     if (!rows[0]) return { ok: false, error: "Booking could not be updated. Please try again." };
+
+    await sql`
+      WITH booking_room AS (
+        SELECT
+          b.id,
+          b.quoted_total_ugx,
+          b.check_in,
+          b.check_out,
+          rt.title
+        FROM bookings b
+        JOIN room_types rt ON rt.id = b.room_type_id
+        WHERE b.id = ${bookingId}::uuid
+        FOR UPDATE OF b
+      ),
+      updated AS (
+        UPDATE folio_charges fc
+        SET
+          amount_ugx = br.quoted_total_ugx,
+          description = br.title || ' â€“ ' ||
+            (br.check_out::date - br.check_in::date)::text ||
+            ' night' ||
+            CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END
+        FROM booking_room br
+        WHERE fc.booking_id = br.id
+          AND fc.category = 'accommodation'
+          AND fc.voided_at IS NULL
+        RETURNING fc.id
+      )
+      INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
+      SELECT
+        br.id,
+        br.title || ' â€“ ' ||
+          (br.check_out::date - br.check_in::date)::text ||
+          ' night' ||
+          CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END,
+        br.quoted_total_ugx,
+        'accommodation',
+        ${session.userId}::uuid
+      FROM booking_room br
+      WHERE NOT EXISTS (SELECT 1 FROM updated)
+    `;
 
     // Clear a room assignment that no longer matches the (possibly changed) room type.
     await sql`

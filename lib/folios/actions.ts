@@ -106,16 +106,59 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
   }
 
   const sql = getSql();
-  await sql`
-    INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
-    VALUES (
-      ${bookingId}::uuid,
-      ${amount},
-      ${method},
-      ${reference},
-      ${session.userId}::uuid
+  const rows = (await sql`
+    WITH booking_room AS (
+      SELECT
+        b.id,
+        b.quoted_total_ugx,
+        b.check_in,
+        b.check_out,
+        rt.title
+      FROM bookings b
+      JOIN room_types rt ON rt.id = b.room_type_id
+      WHERE b.id = ${bookingId}::uuid
+      FOR UPDATE OF b
+    ),
+    accommodation_charge AS (
+      INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
+      SELECT
+        br.id,
+        br.title || ' â€“ ' ||
+          (br.check_out::date - br.check_in::date)::text ||
+          ' night' ||
+          CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END,
+        br.quoted_total_ugx,
+        'accommodation',
+        ${session.userId}::uuid
+      FROM booking_room br
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM folio_charges fc
+        WHERE fc.booking_id = br.id
+          AND fc.category = 'accommodation'
+          AND fc.voided_at IS NULL
+      )
+      RETURNING booking_id
+    ),
+    payment AS (
+      INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
+      SELECT
+        br.id,
+        ${amount},
+        ${method},
+        ${reference},
+        ${session.userId}::uuid
+      FROM booking_room br
+      RETURNING booking_id
     )
-  `;
+    SELECT
+      (SELECT count(*)::int FROM payment) AS payment_count,
+      (SELECT count(*)::int FROM accommodation_charge) AS accommodation_charge_count
+  `) as { payment_count: number; accommodation_charge_count: number }[];
+
+  if ((rows[0]?.payment_count ?? 0) === 0) {
+    throw new Error("Booking not found.");
+  }
 
   revalidatePath(`/bookings/${bookingId}/folio`);
 }
