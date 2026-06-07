@@ -55,5 +55,7 @@ coverage/
 *.local.md
 progress-log.md
 implementation-plan.md
+to-build.md
+paranoid-audit.md
 mempalace.yaml
 entities.json

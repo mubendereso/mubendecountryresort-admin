@@ -76,21 +76,23 @@ export function RoomAssignment({
   }
 
   return (
-    <div className="rounded-2xl bg-stoneWarm-50 p-3 text-sm">
+    <div className="rounded-[18px] border border-stoneWarm-200/70 bg-white/55 p-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">
             Assigned Room
           </p>
-          <p className="mt-1 text-oliveMuted-700">
-            {assignedUnitName ?? <span className="text-oliveMuted-500">Not assigned</span>}
+          <p className="mt-2 font-semibold text-[#2a241a]">
+            {assignedUnitName ?? (
+              <span className="font-normal text-oliveMuted-500">Not assigned</span>
+            )}
           </p>
         </div>
         {!open && (
           <button
             type="button"
             onClick={openPicker}
-            className="rounded-2xl border border-stoneWarm-200 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+            className="rounded-full border border-stoneWarm-200 bg-[#fffdf8] px-3 py-1.5 text-[11px] font-semibold text-oliveMuted-600 transition-all duration-200 hover:-translate-y-0.5 hover:bg-stoneWarm-100"
           >
             {assignedUnitName ? "Change room" : "Assign room"}
           </button>
@@ -107,7 +109,7 @@ export function RoomAssignment({
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
-              className="w-full rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-2xl border border-stoneWarm-200 bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-oliveMuted-400 focus:ring-2 focus:ring-oliveMuted-400/10"
             >
               <option value="">Select a room…</option>
               {(units ?? []).map((u) => {
@@ -132,7 +134,7 @@ export function RoomAssignment({
                 type="button"
                 disabled={isPending}
                 onClick={handleUnassign}
-                className="rounded-2xl border border-stoneWarm-200 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100 disabled:opacity-50"
+                className="rounded-full border border-stoneWarm-200 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100 disabled:opacity-50"
               >
                 Unassign
               </button>
@@ -143,7 +145,7 @@ export function RoomAssignment({
                 setOpen(false);
                 setError(null);
               }}
-              className="rounded-2xl border border-stoneWarm-200 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+              className="rounded-full border border-stoneWarm-200 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
             >
               Cancel
             </button>
@@ -151,7 +153,7 @@ export function RoomAssignment({
               type="button"
               disabled={isPending || !selected}
               onClick={handleAssign}
-              className="rounded-2xl bg-oliveMuted-600 px-3 py-1.5 text-xs font-semibold text-canvas-light transition hover:bg-oliveMuted-500 disabled:opacity-50"
+              className="rounded-full bg-oliveMuted-600 px-4 py-1.5 text-xs font-semibold text-canvas-light transition hover:bg-oliveMuted-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>

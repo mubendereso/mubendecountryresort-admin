@@ -14,8 +14,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  background-image:
+    radial-gradient(circle at 8% 0%, rgba(181, 139, 93, 0.08), transparent 30rem),
+    radial-gradient(circle at 92% 18%, rgba(100, 107, 84, 0.06), transparent 34rem);
+  background-attachment: fixed;
+}
+
 @layer components {
   .surface-card {
-    @apply rounded-3xl border border-stoneWarm-200 bg-white shadow-soft;
+    @apply rounded-[24px] border border-stoneWarm-200/80 bg-[#fffdf8] shadow-[0_14px_35px_rgba(55,43,30,0.08)];
   }
 }

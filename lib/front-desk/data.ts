@@ -27,6 +27,7 @@ export type FrontDeskData = {
   arrivals: FrontDeskBooking[];
   departures: FrontDeskBooking[];
   inHouseCount: number;
+  totalUnits: number;
 };
 
 export async function getFrontDeskData(): Promise<FrontDeskData> {
@@ -38,7 +39,7 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
 
   // MCR-PERF-03: arrivals, departures, and the in-house count are independent
   // once `today` is known, so issue them concurrently instead of serially.
-  const [arrivals, departures, [{ in_house_count }]] = (await Promise.all([
+  const [arrivals, departures, [{ in_house_count, total_units }]] = (await Promise.all([
     sql`
     SELECT
       b.id::text,
@@ -90,16 +91,21 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     ORDER BY b.created_at ASC
   `,
     sql`
-    SELECT count(*)::int AS in_house_count
-    FROM bookings
-    WHERE status = 'checked_in'
+    SELECT
+      (SELECT count(*)::int FROM bookings WHERE status = 'checked_in') AS in_house_count,
+      (SELECT COALESCE(sum(inventory_count), 0)::int FROM room_types) AS total_units
   `
-  ])) as unknown as [FrontDeskBooking[], FrontDeskBooking[], { in_house_count: number }[]];
+  ])) as unknown as [
+    FrontDeskBooking[],
+    FrontDeskBooking[],
+    { in_house_count: number; total_units: number }[]
+  ];
 
   return {
     today,
     arrivals,
     departures,
-    inHouseCount: in_house_count
+    inHouseCount: in_house_count,
+    totalUnits: total_units
   };
 }
