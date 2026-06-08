@@ -13,6 +13,7 @@ export type BookingRow = {
   reference: string;
   room_type_id: string;
   room_type_title: string;
+  room_image_url: string | null;
   check_in: string;   // YYYY-MM-DD
   check_out: string;  // YYYY-MM-DD
   guests_adults: number;
@@ -24,6 +25,8 @@ export type BookingRow = {
   status: BookingStatus;
   expires_at: string | null;
   quoted_total_ugx: number;
+  total_charges_ugx: number;
+  total_paid_ugx: number;
   notes: string | null;
   room_unit_id: string | null;
   room_unit_name: string | null;
