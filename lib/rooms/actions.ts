@@ -23,6 +23,11 @@ const listSchema = z
   .array(z.string().trim().min(1).max(MAX_LIST_ITEM_LENGTH))
   .max(MAX_LIST_ITEMS);
 
+const ugxAmountSchema = z.preprocess(
+  (value) => String(value ?? "").trim().replace(/[,\s]/g, ""),
+  z.coerce.number().int().positive("Price must be greater than zero.")
+);
+
 const roomTypeSchema = z.object({
   id: z.string().uuid(),
   slug: z.string().trim().min(1).max(MAX_SLUG_LENGTH).regex(
@@ -32,7 +37,7 @@ const roomTypeSchema = z.object({
   title: z.string().trim().min(1, "Title is required.").max(MAX_TITLE_LENGTH),
   description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).optional(),
   overview: z.string().trim().max(MAX_OVERVIEW_LENGTH).optional(),
-  price_ugx: z.coerce.number().int().positive("Price must be greater than zero."),
+  price_ugx: ugxAmountSchema,
   cover_image_url: z.string().trim().max(MAX_URL_LENGTH).optional(),
   inventory_count: z.coerce.number().int().min(0, "Inventory cannot be negative."),
   is_published: z.boolean(),
@@ -383,7 +388,7 @@ export async function bulkUpdateRoomRatesAction(formData: FormData) {
     if (!key.startsWith("rate_")) continue;
     const parsed = z.object({
       id: z.string().uuid(),
-      price_ugx: z.coerce.number().int().positive()
+      price_ugx: ugxAmountSchema
     }).safeParse({
       id: key.slice(5),
       price_ugx: value

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { createRoomTypeAction } from "@/lib/rooms/actions";
 
@@ -77,7 +78,14 @@ export default async function NewRoomPage({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Room name" name="title" required />
-            <Field label="Base rate (UGX)" name="price_ugx" type="number" required />
+            <label className="grid gap-2 text-sm font-semibold text-[#2a241a]">
+              Base rate (UGX)
+              <UgxAmountInput
+                name="price_ugx"
+                required
+                className="rounded-[16px] border border-stoneWarm-200 bg-white/75 px-4 py-3 text-sm font-normal outline-none transition focus:border-oliveMuted-400 focus:ring-2 focus:ring-oliveMuted-400/10"
+              />
+            </label>
             <Field label="Inventory count" name="inventory_count" type="number" required defaultValue={1} />
             <Field label="Cover image URL (optional)" name="cover_image_url" />
           </div>

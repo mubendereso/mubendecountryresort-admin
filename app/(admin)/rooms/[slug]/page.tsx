@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { updateRoomTypeAction } from "@/lib/rooms/actions";
 import { getRoomTypeBySlug } from "@/lib/rooms/data";
 import { listToTextarea } from "@/lib/rooms/format";
@@ -108,13 +109,15 @@ export default async function EditRoomTypePage({
           <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Core</p>
           <div className="grid gap-4 md:grid-cols-2">
             <TextField label="Title" name="title" defaultValue={room.title} required />
-            <TextField
-              label="Price UGX"
-              name="price_ugx"
-              type="number"
-              defaultValue={room.price_ugx}
-              required
-            />
+            <label className="grid gap-2 text-sm font-semibold">
+              Price UGX
+              <UgxAmountInput
+                name="price_ugx"
+                defaultValue={Number(room.price_ugx)}
+                required
+                className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-normal"
+              />
+            </label>
             <TextField
               label="Inventory count"
               name="inventory_count"

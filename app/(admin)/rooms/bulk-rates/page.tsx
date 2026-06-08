@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { bulkUpdateRoomRatesAction } from "@/lib/rooms/actions";
 import { getRoomTypes } from "@/lib/rooms/data";
@@ -40,11 +41,9 @@ export default async function BulkRatesPage({
             </span>
             <span className="flex items-center gap-2">
               <span className="text-xs font-semibold text-oliveMuted-500">UGX</span>
-              <input
-                type="number"
+              <UgxAmountInput
                 name={`rate_${room.id}`}
                 required
-                min={1}
                 defaultValue={Number(room.price_ugx)}
                 className="w-full rounded-[15px] border border-stoneWarm-200 bg-white/75 px-4 py-2.5 text-sm outline-none focus:border-oliveMuted-400 sm:w-48"
               />
