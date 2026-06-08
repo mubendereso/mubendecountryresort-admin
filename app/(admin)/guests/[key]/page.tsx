@@ -113,7 +113,7 @@ export default async function GuestDetailPage({
   if (!profile) notFound();
 
   const completedStays = bookings.filter((b) =>
-    ["confirmed", "checked_in", "checked_out"].includes(b.status)
+    ["checked_in", "checked_out"].includes(b.status)
   );
 
   return (

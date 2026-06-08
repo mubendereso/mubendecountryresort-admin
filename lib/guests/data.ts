@@ -8,8 +8,11 @@ export type { GuestSummary } from "./types";
 
 export async function listGuests(): Promise<GuestSummary[]> {
   const sql = getSql();
-  return (await sql`
-    WITH latest AS (
+  const rows = (await sql`
+    WITH context AS (
+      SELECT (now() AT TIME ZONE 'Africa/Kampala')::date AS today
+    ),
+    latest AS (
       SELECT DISTINCT ON (COALESCE(guest_email, guest_phone))
         COALESCE(guest_email, guest_phone) AS guest_key,
         guest_email,
@@ -18,32 +21,78 @@ export async function listGuests(): Promise<GuestSummary[]> {
       FROM bookings
       WHERE COALESCE(guest_email, guest_phone) IS NOT NULL
       ORDER BY COALESCE(guest_email, guest_phone), created_at DESC
+    ),
+    guest_rollup AS (
+      SELECT
+        l.guest_key,
+        l.guest_email,
+        l.guest_full_name,
+        l.guest_phone,
+        COUNT(b.id)::int AS total_bookings,
+        COUNT(b.id) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::int AS total_stays,
+        COALESCE(SUM(
+          COALESCE(
+            payments.total_paid_ugx,
+            CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+          )
+        ), 0) AS total_spend_ugx,
+        MIN(b.check_in) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::text AS first_visit,
+        MAX(b.check_in) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::text AS last_visit,
+        MAX(b.created_at) AS latest_booking_at
+      FROM latest l
+      JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
+      LEFT JOIN LATERAL (
+        SELECT SUM(fp.amount_ugx) AS total_paid_ugx
+        FROM folio_payments fp
+        WHERE fp.booking_id = b.id
+      ) payments ON true
+      GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
     )
     SELECT
-      l.guest_key,
-      l.guest_email,
-      l.guest_full_name,
-      l.guest_phone,
-      COUNT(b.id)::int                                                         AS total_bookings,
-      COUNT(b.id) FILTER (
-        WHERE b.status IN ('confirmed','checked_in','checked_out')
-      )::int                                                                   AS total_stays,
-      COALESCE(SUM(b.quoted_total_ugx) FILTER (
-        WHERE b.status IN ('checked_in','checked_out')
-      ), 0)                                                                    AS total_spend_ugx,
-      MIN(b.check_in)::text                                                    AS first_visit,
-      MAX(b.check_in)::text                                                    AS last_visit
-    FROM latest l
-    JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
-    GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
-    ORDER BY MAX(b.created_at) DESC
+      gr.guest_key,
+      gr.guest_email,
+      gr.guest_full_name,
+      gr.guest_phone,
+      gr.total_bookings,
+      gr.total_stays,
+      gr.total_spend_ugx,
+      gr.first_visit,
+      gr.last_visit,
+      upcoming.check_in::text AS next_arrival,
+      upcoming.room_type_title AS next_room_type_title
+    FROM guest_rollup gr
+    LEFT JOIN LATERAL (
+      SELECT
+        b.check_in,
+        rt.title AS room_type_title
+      FROM bookings b
+      JOIN room_types rt ON rt.id = b.room_type_id
+      JOIN context c ON true
+      WHERE COALESCE(b.guest_email, b.guest_phone) = gr.guest_key
+        AND b.check_in > c.today
+        AND b.status IN ('awaiting_confirmation','confirmed')
+      ORDER BY b.check_in ASC, b.created_at ASC
+      LIMIT 1
+    ) upcoming ON true
+    ORDER BY gr.latest_booking_at DESC
   `) as GuestSummary[];
+
+  return normalizeGuestSummaries(rows);
 }
 
 export async function getGuestProfile(key: string): Promise<GuestSummary | null> {
   const sql = getSql();
   const rows = (await sql`
-    WITH latest AS (
+    WITH context AS (
+      SELECT (now() AT TIME ZONE 'Africa/Kampala')::date AS today
+    ),
+    latest AS (
       SELECT DISTINCT ON (COALESCE(guest_email, guest_phone))
         COALESCE(guest_email, guest_phone) AS guest_key,
         guest_email,
@@ -52,26 +101,75 @@ export async function getGuestProfile(key: string): Promise<GuestSummary | null>
       FROM bookings
       WHERE COALESCE(guest_email, guest_phone) = ${key}
       ORDER BY COALESCE(guest_email, guest_phone), created_at DESC
+    ),
+    guest_rollup AS (
+      SELECT
+        l.guest_key,
+        l.guest_email,
+        l.guest_full_name,
+        l.guest_phone,
+        COUNT(b.id)::int AS total_bookings,
+        COUNT(b.id) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::int AS total_stays,
+        COALESCE(SUM(
+          COALESCE(
+            payments.total_paid_ugx,
+            CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+          )
+        ), 0) AS total_spend_ugx,
+        MIN(b.check_in) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::text AS first_visit,
+        MAX(b.check_in) FILTER (
+          WHERE b.status IN ('checked_in','checked_out')
+        )::text AS last_visit
+      FROM latest l
+      JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
+      LEFT JOIN LATERAL (
+        SELECT SUM(fp.amount_ugx) AS total_paid_ugx
+        FROM folio_payments fp
+        WHERE fp.booking_id = b.id
+      ) payments ON true
+      GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
     )
     SELECT
-      l.guest_key,
-      l.guest_email,
-      l.guest_full_name,
-      l.guest_phone,
-      COUNT(b.id)::int                                                         AS total_bookings,
-      COUNT(b.id) FILTER (
-        WHERE b.status IN ('confirmed','checked_in','checked_out')
-      )::int                                                                   AS total_stays,
-      COALESCE(SUM(b.quoted_total_ugx) FILTER (
-        WHERE b.status IN ('checked_in','checked_out')
-      ), 0)                                                                    AS total_spend_ugx,
-      MIN(b.check_in)::text                                                    AS first_visit,
-      MAX(b.check_in)::text                                                    AS last_visit
-    FROM latest l
-    JOIN bookings b ON COALESCE(b.guest_email, b.guest_phone) = l.guest_key
-    GROUP BY l.guest_key, l.guest_email, l.guest_full_name, l.guest_phone
+      gr.guest_key,
+      gr.guest_email,
+      gr.guest_full_name,
+      gr.guest_phone,
+      gr.total_bookings,
+      gr.total_stays,
+      gr.total_spend_ugx,
+      gr.first_visit,
+      gr.last_visit,
+      upcoming.check_in::text AS next_arrival,
+      upcoming.room_type_title AS next_room_type_title
+    FROM guest_rollup gr
+    LEFT JOIN LATERAL (
+      SELECT
+        b.check_in,
+        rt.title AS room_type_title
+      FROM bookings b
+      JOIN room_types rt ON rt.id = b.room_type_id
+      JOIN context c ON true
+      WHERE COALESCE(b.guest_email, b.guest_phone) = gr.guest_key
+        AND b.check_in > c.today
+        AND b.status IN ('awaiting_confirmation','confirmed')
+      ORDER BY b.check_in ASC, b.created_at ASC
+      LIMIT 1
+    ) upcoming ON true
   `) as GuestSummary[];
-  return rows[0] ?? null;
+  return normalizeGuestSummaries(rows)[0] ?? null;
+}
+
+function normalizeGuestSummaries(guests: GuestSummary[]): GuestSummary[] {
+  return guests.map((guest) => ({
+    ...guest,
+    total_bookings: Number(guest.total_bookings),
+    total_stays: Number(guest.total_stays),
+    total_spend_ugx: Number(guest.total_spend_ugx)
+  }));
 }
 
 export async function listBookingsByGuestKey(key: string): Promise<BookingRow[]> {
