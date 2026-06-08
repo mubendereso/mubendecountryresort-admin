@@ -168,7 +168,13 @@ export async function getAvailabilityForRoomType(roomTypeId: string, checkIn: st
     select room_type_units_available(${roomTypeId}, ${checkIn}, ${checkOut})::int as units_available
   `) as { units_available: number }[];
   const bookings = (await sql`
-    select reference, check_in, check_out, guest_full_name, status, expires_at
+    select
+      reference,
+      check_in::text,
+      check_out::text,
+      guest_full_name,
+      status,
+      to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at
     from bookings
     where room_type_id = ${roomTypeId}
       and check_in < ${checkOut}

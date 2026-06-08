@@ -209,7 +209,7 @@ export async function createStaffBookingAction(
     const rows = (await sql`
       WITH created AS (
         SELECT booking_id, reference, quoted_total_ugx
-        FROM create_staff_booking(
+        FROM create_staff_booking_with_folio(
           ${roomTypeSlug}::text,
           ${checkIn}::date,
           ${checkOut}::date,
@@ -219,24 +219,9 @@ export async function createStaffBookingAction(
           ${guestPhone}::text,
           ${guestEmail}::text,
           ${specialRequests}::text,
-          ${notes}::text
-        )
-      ),
-      accommodation_charge AS (
-        INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
-        SELECT
-          b.id,
-          rt.title || ' – ' ||
-            (b.check_out::date - b.check_in::date)::text ||
-            ' night' ||
-            CASE WHEN (b.check_out::date - b.check_in::date) = 1 THEN '' ELSE 's' END,
-          b.quoted_total_ugx,
-          'accommodation',
+          ${notes}::text,
           ${session.userId}::uuid
-        FROM created c
-        JOIN bookings b ON b.id = c.booking_id
-        JOIN room_types rt ON rt.id = b.room_type_id
-        RETURNING booking_id
+        )
       ),
       deposit_payment AS (
         INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
@@ -254,7 +239,6 @@ export async function createStaffBookingAction(
         c.booking_id::text,
         c.reference,
         c.quoted_total_ugx,
-        (SELECT count(*) FROM accommodation_charge) AS accommodation_charge_count,
         (SELECT count(*) FROM deposit_payment) AS deposit_payment_count
       FROM created c
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
