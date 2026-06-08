@@ -122,13 +122,6 @@ export default async function EditRoomTypePage({
               defaultValue={room.inventory_count}
               required
             />
-            <TextField
-              label="Sort order"
-              name="sort_order"
-              type="number"
-              defaultValue={room.sort_order}
-              required
-            />
           </div>
           <label className="flex items-center gap-3 text-sm font-semibold">
             <input

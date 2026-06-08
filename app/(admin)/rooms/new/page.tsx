@@ -77,10 +77,8 @@ export default async function NewRoomPage({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Room name" name="title" required />
-            <Field label="Slug" name="slug" required />
             <Field label="Base rate (UGX)" name="price_ugx" type="number" required />
             <Field label="Inventory count" name="inventory_count" type="number" required defaultValue={1} />
-            <Field label="Sort order" name="sort_order" type="number" required defaultValue={0} />
             <Field label="Cover image URL (optional)" name="cover_image_url" />
           </div>
           <label className="inline-flex items-center gap-3 text-sm font-semibold text-[#2a241a]">

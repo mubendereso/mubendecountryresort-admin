@@ -35,7 +35,6 @@ const roomTypeSchema = z.object({
   price_ugx: z.coerce.number().int().positive("Price must be greater than zero."),
   cover_image_url: z.string().trim().max(MAX_URL_LENGTH).optional(),
   inventory_count: z.coerce.number().int().min(0, "Inventory cannot be negative."),
-  sort_order: z.coerce.number().int(),
   is_published: z.boolean(),
   details: listSchema,
   amenities: listSchema,
@@ -44,10 +43,25 @@ const roomTypeSchema = z.object({
   // core form save does not overwrite uploaded images.
 });
 
-const createRoomTypeSchema = roomTypeSchema.omit({ id: true });
+const createRoomTypeSchema = roomTypeSchema.omit({
+  id: true,
+  slug: true
+});
 
 function optionalText(value: string | undefined) {
   return value ? value : null;
+}
+
+function roomSlugFromTitle(title: string) {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_SLUG_LENGTH);
+
+  return slug || "room";
 }
 
 async function requireContentManager() {
@@ -70,7 +84,6 @@ export async function updateRoomTypeAction(formData: FormData) {
     price_ugx: formData.get("price_ugx"),
     cover_image_url: formData.get("cover_image_url"),
     inventory_count: formData.get("inventory_count"),
-    sort_order: formData.get("sort_order"),
     is_published: formData.get("is_published") === "on",
     details: textareaToList(formData.get("details")),
     amenities: textareaToList(formData.get("amenities")),
@@ -98,8 +111,7 @@ export async function updateRoomTypeAction(formData: FormData) {
         amenities = ${room.amenities},
         dining_hours = ${room.dining_hours},
         inventory_count = ${room.inventory_count},
-        is_published = ${room.is_published},
-        sort_order = ${room.sort_order}
+        is_published = ${room.is_published}
       WHERE id = ${room.id}
       RETURNING id, title, inventory_count
     ),
@@ -139,14 +151,12 @@ export async function createRoomTypeAction(formData: FormData) {
   await requireContentManager();
 
   const parsed = createRoomTypeSchema.safeParse({
-    slug: formData.get("slug"),
     title: formData.get("title"),
     description: formData.get("description"),
     overview: formData.get("overview"),
     price_ugx: formData.get("price_ugx"),
     cover_image_url: formData.get("cover_image_url"),
     inventory_count: formData.get("inventory_count"),
-    sort_order: formData.get("sort_order"),
     is_published: formData.get("is_published") === "on",
     details: textareaToList(formData.get("details")),
     amenities: textareaToList(formData.get("amenities")),
@@ -159,21 +169,33 @@ export async function createRoomTypeAction(formData: FormData) {
   }
 
   const room = parsed.data;
+  const baseSlug = roomSlugFromTitle(room.title);
   const sql = getSql();
 
-  const existing = (await sql`
-    SELECT 1
-    FROM room_types
-    WHERE slug = ${room.slug}
-    LIMIT 1
-  `) as { "?column?": number }[];
-
-  if (existing.length > 0) {
-    redirect(`/rooms/new?message=${encodeURIComponent("That room slug is already in use.")}`);
-  }
-
-  await sql`
-    WITH created AS (
+  const createdRows = (await sql`
+    WITH locked AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtext(${baseSlug}))
+    ),
+    candidate AS (
+      SELECT
+        CASE
+          WHEN suffix = 0 THEN ${baseSlug}
+          ELSE left(${baseSlug}, ${MAX_SLUG_LENGTH - 5}) || '-' || suffix::text
+        END AS slug
+      FROM generate_series(0, 9999) AS suffix
+      CROSS JOIN locked
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM room_types rt
+        WHERE rt.slug = CASE
+          WHEN suffix = 0 THEN ${baseSlug}
+          ELSE left(${baseSlug}, ${MAX_SLUG_LENGTH - 5}) || '-' || suffix::text
+        END
+      )
+      ORDER BY suffix
+      LIMIT 1
+    ),
+    created AS (
       INSERT INTO room_types (
         slug,
         title,
@@ -188,8 +210,8 @@ export async function createRoomTypeAction(formData: FormData) {
         is_published,
         sort_order
       )
-      VALUES (
-        ${room.slug},
+      SELECT
+        candidate.slug,
         ${room.title},
         ${optionalText(room.description)},
         ${optionalText(room.overview)},
@@ -200,25 +222,34 @@ export async function createRoomTypeAction(formData: FormData) {
         ${room.dining_hours},
         ${room.inventory_count},
         ${room.is_published},
-        ${room.sort_order}
-      )
-      RETURNING id, title, inventory_count
+        COALESCE((SELECT max(sort_order) + 10 FROM room_types), 0)
+      FROM candidate
+      RETURNING id, slug, title, inventory_count
+    ),
+    units AS (
+      INSERT INTO room_units (room_type_id, unit_name, housekeeping_status)
+      SELECT
+        created.id,
+        CASE
+          WHEN created.inventory_count = 1 THEN created.title
+          ELSE created.title || ' ' || generated.unit_number::text
+        END,
+        'clean'
+      FROM created
+      CROSS JOIN LATERAL generate_series(1, created.inventory_count) AS generated(unit_number)
     )
-    INSERT INTO room_units (room_type_id, unit_name, housekeeping_status)
-    SELECT
-      created.id,
-      CASE
-        WHEN created.inventory_count = 1 THEN created.title
-        ELSE created.title || ' ' || generated.unit_number::text
-      END,
-      'clean'
+    SELECT slug
     FROM created
-    CROSS JOIN LATERAL generate_series(1, created.inventory_count) AS generated(unit_number)
-  `;
+  `) as { slug: string }[];
+
+  const created = createdRows[0];
+  if (!created) {
+    redirect(`/rooms/new?message=${encodeURIComponent("Could not generate a unique room URL.")}`);
+  }
 
   revalidatePath("/rooms");
   revalidatePath("/availability");
-  redirect(`/rooms/${room.slug}?message=${encodeURIComponent("Room type created. Add its photos below.")}`);
+  redirect(`/rooms/${created.slug}?message=${encodeURIComponent("Room type created. Add its photos below.")}`);
 }
 
 const roomLifecycleSchema = z.object({
@@ -316,7 +347,7 @@ export async function duplicateRoomTypeAction(formData: FormData) {
         gallery,
         inventory_count,
         false,
-        sort_order + 1
+        COALESCE((SELECT max(sort_order) + 10 FROM room_types), 0)
       FROM room_types
       WHERE id = ${parsed.data.id}
       RETURNING id, slug, title, inventory_count
@@ -490,7 +521,8 @@ export async function importRoomTypesAction(formData: FormData) {
         price_ugx,
         inventory_count,
         is_published,
-        description
+        description,
+        sort_order
       )
       SELECT
         slug,
@@ -498,7 +530,9 @@ export async function importRoomTypesAction(formData: FormData) {
         price_ugx,
         inventory_count,
         is_published,
-        description
+        description,
+        COALESCE((SELECT max(sort_order) FROM room_types), -10)
+          + row_number() OVER (ORDER BY slug) * 10
       FROM imported
       ON CONFLICT (slug) DO NOTHING
       RETURNING id, title, inventory_count
