@@ -26,18 +26,26 @@ export type DashboardContact = {
   created_at: string;
 };
 
+export type DashboardOccupancyDay = {
+  date: string;
+  occupiedRooms: number;
+  occupancyPercent: number;
+};
+
 export type DashboardData = {
   today: string;
   totalUnits: number;
   arrivalsToday: number;
   departuresToday: number;
-  inHouse: number;
+  inHouseGuests: number;
   pendingPayments: number;
   unreadContacts: number;
   occupiedTonight: number;
   occupancyPercent: number;
   arrivalBookings: DashboardBooking[];
   departureBookings: DashboardBooking[];
+  upcomingBookings: DashboardBooking[];
+  occupancyWeek: DashboardOccupancyDay[];
   recentUnreadContacts: DashboardContact[];
 };
 
@@ -65,7 +73,9 @@ export async function getDashboardData(): Promise<DashboardData> {
         AND b.status = 'checked_in'
     ),
     in_house AS (
-      SELECT count(*)::int AS count
+      SELECT
+        count(*)::int AS occupied_rooms,
+        COALESCE(sum(guests_adults + guests_children), 0)::int AS guest_count
       FROM bookings
       WHERE status = 'checked_in'
     ),
@@ -92,7 +102,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       inventory.total_units,
       arrivals.count AS arrivals_today,
       departures.count AS departures_today,
-      in_house.count AS in_house,
+      in_house.guest_count AS in_house_guests,
       pending_payments.count AS pending_payments,
       unread_contacts.count AS unread_contacts,
       occupied.count AS occupied_tonight,
@@ -106,14 +116,16 @@ export async function getDashboardData(): Promise<DashboardData> {
     total_units: number;
     arrivals_today: number;
     departures_today: number;
-    in_house: number;
+    in_house_guests: number;
     pending_payments: number;
     unread_contacts: number;
     occupied_tonight: number;
     occupancy_percent: number;
   }[];
 
-  const arrivalBookings = (await sql`
+  const [arrivalBookings, departureBookings, upcomingBookings, occupancyWeek, recentUnreadContacts] =
+    (await Promise.all([
+      sql`
     WITH context AS (
       SELECT (now() AT TIME ZONE 'Africa/Kampala')::date AS today
     )
@@ -137,9 +149,8 @@ export async function getDashboardData(): Promise<DashboardData> {
       AND b.status = 'confirmed'
     ORDER BY b.created_at ASC
     LIMIT 8
-  `) as DashboardBooking[];
-
-  const departureBookings = (await sql`
+  `,
+      sql`
     WITH context AS (
       SELECT (now() AT TIME ZONE 'Africa/Kampala')::date AS today
     )
@@ -163,9 +174,59 @@ export async function getDashboardData(): Promise<DashboardData> {
       AND b.status = 'checked_in'
     ORDER BY b.created_at ASC
     LIMIT 8
-  `) as DashboardBooking[];
-
-  const recentUnreadContacts = (await sql`
+  `,
+      sql`
+    WITH context AS (
+      SELECT (now() AT TIME ZONE 'Africa/Kampala')::date AS today
+    )
+    SELECT
+      b.id::text,
+      b.reference,
+      rt.title AS room_type_title,
+      b.check_in::text,
+      b.check_out::text,
+      b.guests_adults,
+      b.guests_children,
+      b.guest_full_name,
+      b.guest_phone,
+      b.special_requests,
+      b.quoted_total_ugx,
+      b.status
+    FROM bookings b
+    JOIN room_types rt ON rt.id = b.room_type_id
+    JOIN context c ON true
+    WHERE b.check_in > c.today
+      AND b.status IN ('awaiting_confirmation', 'confirmed')
+    ORDER BY b.check_in ASC, b.created_at ASC
+    LIMIT 6
+  `,
+      sql`
+    WITH context AS (
+      SELECT
+        (now() AT TIME ZONE 'Africa/Kampala')::date AS today,
+        COALESCE((SELECT sum(inventory_count) FROM room_types), 0)::int AS total_units
+    ),
+    dates AS (
+      SELECT generate_series(c.today, c.today + 6, interval '1 day')::date AS stay_date
+      FROM context c
+    )
+    SELECT
+      d.stay_date::text AS date,
+      count(b.id)::int AS occupied_rooms,
+      CASE
+        WHEN c.total_units = 0 THEN 0
+        ELSE round((count(b.id)::numeric / c.total_units::numeric) * 100)::int
+      END AS occupancy_percent
+    FROM dates d
+    CROSS JOIN context c
+    LEFT JOIN bookings b
+      ON b.check_in <= d.stay_date
+     AND b.check_out > d.stay_date
+     AND b.status IN ('awaiting_confirmation', 'confirmed', 'checked_in')
+    GROUP BY d.stay_date, c.total_units
+    ORDER BY d.stay_date ASC
+  `,
+      sql`
     SELECT
       id::text,
       full_name,
@@ -176,20 +237,33 @@ export async function getDashboardData(): Promise<DashboardData> {
     WHERE status = 'new'
     ORDER BY created_at DESC
     LIMIT 5
-  `) as DashboardContact[];
+  `
+    ])) as unknown as [
+      DashboardBooking[],
+      DashboardBooking[],
+      DashboardBooking[],
+      { date: string; occupied_rooms: number; occupancy_percent: number }[],
+      DashboardContact[]
+    ];
 
   return {
     today: summary.today,
     totalUnits: summary.total_units,
     arrivalsToday: summary.arrivals_today,
     departuresToday: summary.departures_today,
-    inHouse: summary.in_house,
+    inHouseGuests: summary.in_house_guests,
     pendingPayments: summary.pending_payments,
     unreadContacts: summary.unread_contacts,
     occupiedTonight: summary.occupied_tonight,
     occupancyPercent: summary.occupancy_percent,
     arrivalBookings,
     departureBookings,
+    upcomingBookings,
+    occupancyWeek: occupancyWeek.map((day) => ({
+      date: day.date,
+      occupiedRooms: day.occupied_rooms,
+      occupancyPercent: day.occupancy_percent
+    })),
     recentUnreadContacts
   };
 }
