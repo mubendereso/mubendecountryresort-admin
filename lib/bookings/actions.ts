@@ -113,9 +113,23 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
     `;
   }
 
+  // A checked-out room immediately enters the housekeeping attention queue.
+  // The physical assignment is retained as stay history, but no longer blocks
+  // future assignments because checked_out is not an occupying status.
+  if (newStatus === "checked_out") {
+    await sql`
+      UPDATE room_units ru
+      SET housekeeping_status = 'dirty'
+      FROM bookings b
+      WHERE b.id = ${id}::uuid
+        AND b.room_unit_id = ru.id
+    `;
+  }
+
   revalidatePath("/dashboard");
   revalidatePath("/front-desk");
   revalidatePath("/bookings");
+  revalidatePath("/housekeeping");
 }
 
 export type CreateStaffBookingResult =

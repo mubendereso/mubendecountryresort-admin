@@ -111,6 +111,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS room_units_room_type_idx
         ON room_units(room_type_id, unit_name);
     `
+  },
+  {
+    version: 5,
+    name: "housekeeping_inspection_pending",
+    up: `
+      -- Schema marker migration. room_units.housekeeping_status is TEXT in
+      -- SQLite, so no table rebuild is needed for the new server-side value.
+      INSERT OR REPLACE INTO _meta(key, value)
+      VALUES ('housekeeping_status_schema', 'inspection_pending');
+    `
   }
 ];
 

@@ -34,7 +34,7 @@ export async function listAssignableUnits(bookingId: string): Promise<Assignable
         FROM bookings other
         WHERE other.room_unit_id = ru.id
           AND other.id <> b.id
-          AND other.status IN ('confirmed', 'checked_in')
+          AND other.status IN ('awaiting_confirmation', 'confirmed', 'checked_in')
           AND other.check_in < b.check_out
           AND other.check_out > b.check_in
       ) AS has_conflict,
@@ -48,7 +48,7 @@ export async function listAssignableUnits(bookingId: string): Promise<Assignable
         FROM bookings other
         WHERE other.room_unit_id = ru.id
           AND other.id <> b.id
-          AND other.status IN ('confirmed', 'checked_in')
+          AND other.status IN ('awaiting_confirmation', 'confirmed', 'checked_in')
           AND other.check_in < b.check_out
           AND other.check_out > b.check_in
       ) ASC,

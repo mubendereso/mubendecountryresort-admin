@@ -35,6 +35,7 @@ export async function getHousekeepingData(): Promise<HousekeepingData> {
   const statusCounts = {
     dirty: 0,
     cleaning: 0,
+    inspection_pending: 0,
     clean: 0,
     inspected: 0,
     out_of_order: 0

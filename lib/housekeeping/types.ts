@@ -1,4 +1,10 @@
-export type HousekeepingStatus = "dirty" | "cleaning" | "clean" | "inspected" | "out_of_order";
+export type HousekeepingStatus =
+  | "dirty"
+  | "cleaning"
+  | "inspection_pending"
+  | "clean"
+  | "inspected"
+  | "out_of_order";
 
 export type RoomUnit = {
   id: string;
@@ -14,6 +20,7 @@ export type RoomUnit = {
 export const HOUSEKEEPING_STATUSES: HousekeepingStatus[] = [
   "dirty",
   "cleaning",
+  "inspection_pending",
   "clean",
   "inspected",
   "out_of_order"
@@ -22,6 +29,7 @@ export const HOUSEKEEPING_STATUSES: HousekeepingStatus[] = [
 export const HOUSEKEEPING_STATUS_LABELS: Record<HousekeepingStatus, string> = {
   dirty: "Dirty",
   cleaning: "Cleaning",
+  inspection_pending: "Inspection pending",
   clean: "Clean",
   inspected: "Inspected",
   out_of_order: "Out of order"

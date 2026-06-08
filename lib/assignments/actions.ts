@@ -59,7 +59,7 @@ export async function assignRoomUnitAction(formData: FormData): Promise<AssignRe
     JOIN bookings target ON target.id = ${bookingId}::uuid
     WHERE other.room_unit_id = ${roomUnitId}::uuid
       AND other.id <> target.id
-      AND other.status IN ('confirmed', 'checked_in')
+      AND other.status IN ('awaiting_confirmation', 'confirmed', 'checked_in')
       AND other.check_in < target.check_out
       AND other.check_out > target.check_in
     LIMIT 1

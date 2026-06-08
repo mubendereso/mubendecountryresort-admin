@@ -59,7 +59,14 @@ const contactMarkSchema = z.object({
 
 const roomUnitHousekeepingSchema = z.object({
   unitId: z.string().uuid(),
-  status: z.enum(["dirty", "cleaning", "clean", "inspected", "out_of_order"]),
+  status: z.enum([
+    "dirty",
+    "cleaning",
+    "inspection_pending",
+    "clean",
+    "inspected",
+    "out_of_order"
+  ]),
   notes: z.string().trim().max(600).nullable()
 });
 
