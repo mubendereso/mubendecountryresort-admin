@@ -7,7 +7,7 @@ export default async function NewBookingPage() {
   const rooms = await getRoomTypes();
 
   const roomOptions = rooms
-    .filter((r) => r.is_published)
+    .filter((r) => r.is_published && !r.archived_at)
     .map((r) => ({
       slug: r.slug,
       title: r.title,

@@ -14,7 +14,8 @@ export default async function AvailabilityPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [rooms, query] = await Promise.all([getRoomTypes(), searchParams]);
+  const [allRooms, query] = await Promise.all([getRoomTypes(), searchParams]);
+  const rooms = allRooms.filter((room) => !room.archived_at);
   const checkIn = getFirstValue(query.checkIn);
   const checkOut = getFirstValue(query.checkOut);
   const roomTypeId = getFirstValue(query.roomTypeId) ?? rooms[0]?.id;

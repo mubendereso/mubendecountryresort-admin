@@ -104,7 +104,7 @@ export default async function EditRoomTypePage({
         <input type="hidden" name="id" value={room.id} />
         <input type="hidden" name="slug" value={room.slug} />
 
-        <section className="surface-card grid gap-4 p-5">
+        <section id="amenities" className="surface-card grid scroll-mt-24 gap-4 p-5">
           <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Core</p>
           <div className="grid gap-4 md:grid-cols-2">
             <TextField label="Title" name="title" defaultValue={room.title} required />
@@ -177,7 +177,7 @@ export default async function EditRoomTypePage({
         </div>
       </form>
 
-      <section className="surface-card grid gap-4 p-5">
+      <section id="photos" className="surface-card grid scroll-mt-24 gap-4 p-5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Upload room images</p>
         <RoomImageUploader roomId={room.id} slug={room.slug} gallery={room.gallery} />
       </section>

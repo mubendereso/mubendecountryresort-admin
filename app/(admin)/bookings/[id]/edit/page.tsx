@@ -38,7 +38,7 @@ export default async function EditBookingPage({
   }
 
   const roomOptions = rooms
-    .filter((r) => r.is_published || r.id === booking.room_type_id)
+    .filter((r) => (r.is_published && !r.archived_at) || r.id === booking.room_type_id)
     .map((r) => ({
       slug: r.slug,
       title: r.title,

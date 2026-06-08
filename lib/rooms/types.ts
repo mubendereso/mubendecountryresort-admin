@@ -12,9 +12,28 @@ export type RoomTypeRow = {
   gallery: string[];
   inventory_count: number;
   is_published: boolean;
+  archived_at: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
+};
+
+export type RoomManagementRow = RoomTypeRow & {
+  image_url: string | null;
+  occupied_count: number;
+  available_count: number;
+  out_of_order_count: number;
+};
+
+export type RoomManagementSummary = {
+  roomTypes: number;
+  totalRooms: number;
+  availableRooms: number;
+  occupiedRooms: number;
+  outOfOrderRooms: number;
+  publishedRoomTypes: number;
+  draftRoomTypes: number;
+  archivedRoomTypes: number;
 };
 
 export type AvailabilityBookingRow = {
