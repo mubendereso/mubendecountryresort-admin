@@ -5,14 +5,15 @@
 // the strategy is intentionally minimal:
 //
 //   - Static hashed assets under /_next/static/* are immutable → cache-first.
-//   - Document (navigation) requests are network-first with a cache fallback,
-//     so the app at least renders a shell when the user is fully offline.
+//   - Document requests use navigation preload so the browser can start the
+//     network request while a dormant service worker is waking up.
+//   - Authenticated HTML is never cached; only the dedicated offline page is.
 //   - Everything else (server actions, API routes, image uploads, etc.) is
 //     network-only — we never want to serve stale state for those.
 //
 // Bump CACHE_VERSION to force clients to evict old caches on next activate.
 
-const CACHE_VERSION = "mcr-admin-v1";
+const CACHE_VERSION = "mcr-admin-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -36,6 +37,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
+      if (self.registration.navigationPreload) {
+        await self.registration.navigationPreload.enable();
+      }
       const cacheNames = await caches.keys();
       await Promise.all(
         cacheNames
@@ -98,14 +102,10 @@ self.addEventListener("fetch", (event) => {
   if (isHtmlNavigation(request)) {
     event.respondWith(
       (async () => {
-        const cache = await caches.open(PAGES_CACHE);
         try {
-          const network = await fetch(request);
-          if (network.ok) cache.put(request, network.clone());
-          return network;
+          return (await event.preloadResponse) || fetch(request);
         } catch {
-          const cached = await cache.match(request);
-          if (cached) return cached;
+          const cache = await caches.open(PAGES_CACHE);
           const fallback = await cache.match(OFFLINE_FALLBACK);
           if (fallback) return fallback;
           return new Response("Offline", {
