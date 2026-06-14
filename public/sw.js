@@ -13,7 +13,7 @@
 //
 // Bump CACHE_VERSION to force clients to evict old caches on next activate.
 
-const CACHE_VERSION = "mcr-admin-v2";
+const CACHE_VERSION = "mcr-admin-v3";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -135,8 +135,8 @@ self.addEventListener("push", (event) => {
       typeof payload.title === "string" ? payload.title : "MCR Admin",
       {
         body: typeof payload.body === "string" ? payload.body : "A new booking is ready for review.",
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
+        icon: "/icons/mcr-official-logo.png",
+        badge: "/icons/mcr-official-logo.png",
         tag: typeof payload.tag === "string" ? payload.tag : undefined,
         data: payload.data && typeof payload.data === "object" ? payload.data : {}
       }

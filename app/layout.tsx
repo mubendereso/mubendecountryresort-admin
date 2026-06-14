@@ -9,6 +9,20 @@ export const metadata: Metadata = {
   },
   description: "Operational dashboard for Mubende Country Resort staff.",
   applicationName: "Mubende Country Resort Admin",
+  icons: {
+    icon: [{ url: "/icons/mcr-official-logo.png", type: "image/png" }],
+    shortcut: "/icons/mcr-official-logo.png",
+    apple: "/icons/mcr-official-logo.png"
+  },
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true
+    }
+  },
   appleWebApp: {
     capable: true,
     title: "MCR Admin",

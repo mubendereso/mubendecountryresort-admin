@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { signInWithPasswordAction } from "@/lib/auth/actions";
 import { sanitizeNextPath } from "@/lib/auth/utils";
@@ -26,6 +27,16 @@ export default async function LoginPage({
     <main className="min-h-screen bg-canvas-light px-4 py-10 text-[#2a241a]">
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-5xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_420px]">
         <section className="hidden rounded-[36px] border border-stoneWarm-200 bg-gradient-to-br from-stoneWarm-100 to-canvas-light p-10 shadow-panel lg:block">
+          <div className="relative mb-8 h-24 w-24 overflow-hidden rounded-[28px] border border-stoneWarm-200 bg-white shadow-sm">
+            <Image
+              src="/icons/mcr-official-logo.png"
+              alt="Mubende Country Resort"
+              fill
+              sizes="96px"
+              className="object-contain"
+              priority
+            />
+          </div>
           <p className="text-[11px] uppercase tracking-[0.28em] text-oliveMuted-500">
             Mubende Country Resort
           </p>
@@ -40,6 +51,16 @@ export default async function LoginPage({
         </section>
 
         <section className="surface-card my-auto rounded-[36px] px-6 py-7 sm:px-8 sm:py-9">
+          <div className="relative mb-5 h-20 w-20 overflow-hidden rounded-3xl border border-stoneWarm-200 bg-white shadow-sm lg:hidden">
+            <Image
+              src="/icons/mcr-official-logo.png"
+              alt="Mubende Country Resort"
+              fill
+              sizes="80px"
+              className="object-contain"
+              priority
+            />
+          </div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-oliveMuted-500">Sign in</p>
           <h2 className="mt-2 text-3xl font-semibold">Enter staff credentials</h2>
           <p className="mt-3 text-sm leading-6 text-oliveMuted-600">

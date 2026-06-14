@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "@/lib/auth/actions";
@@ -67,18 +68,15 @@ export function AdminOperationsHeader({
       <div className="mx-auto max-w-[1480px] px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-[76px] items-center justify-between gap-6 border-b border-stoneWarm-200/70">
           <Link href="/front-desk" className="group flex min-w-0 items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-stoneWarm-200 bg-[#fffdf8] text-oliveMuted-600 shadow-[0_8px_22px_rgba(55,43,30,0.08)] transition-transform duration-200 group-hover:-translate-y-0.5">
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              >
-                <path d="M4 19h16M6 19v-8l6-5 6 5v8M9 19v-5h6v5" />
-                <path d="M9 10h.01M15 10h.01" strokeLinecap="round" />
-              </svg>
+            <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-stoneWarm-200 bg-white shadow-[0_8px_22px_rgba(55,43,30,0.08)] transition-transform duration-200 group-hover:-translate-y-0.5">
+              <Image
+                src="/icons/mcr-official-logo.png"
+                alt=""
+                fill
+                sizes="44px"
+                className="object-contain"
+                priority
+              />
             </span>
             <span className="min-w-0">
               <span className="block truncate font-serif text-lg font-semibold tracking-[-0.01em] text-[#2a241a]">
