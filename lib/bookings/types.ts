@@ -14,6 +14,9 @@ export type BookingRow = {
   room_type_id: string;
   room_type_title: string;
   room_image_url: string | null;
+  group_id: string | null;
+  group_reference: string | null;
+  group_name: string | null;
   check_in: string;   // YYYY-MM-DD
   check_out: string;  // YYYY-MM-DD
   guests_adults: number;

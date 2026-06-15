@@ -132,6 +132,14 @@ export default async function BookingHistoryPage({
               <p className="text-sm text-oliveMuted-600">
                 {booking.room_type_title} - {booking.reference}
               </p>
+              {booking.group_id && (
+                <p className="text-sm text-oliveMuted-600">
+                  Group{" "}
+                  <Link href={`/groups/${booking.group_id}`} className="font-semibold text-oliveMuted-700 hover:underline">
+                    {booking.group_name ?? booking.group_reference ?? "Open group"}
+                  </Link>
+                </p>
+              )}
             </div>
             <span
               className={`rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] ${STATUS_STYLE[booking.status]}`}

@@ -3,6 +3,7 @@ import "server-only";
 import { getSql } from "@/lib/db/client";
 import type {
   AvailabilityBookingRow,
+  GroupBookingRoomOption,
   RoomManagementRow,
   RoomManagementSummary,
   RoomTypeRow
@@ -62,6 +63,34 @@ export async function getRoomTypeBySlug(slug: string) {
   `) as RoomTypeRow[];
 
   return rows[0] ?? null;
+}
+
+export async function getGroupBookingRoomOptions(checkIn: string, checkOut: string) {
+  const sql = getSql();
+  const rows = (await sql`
+    select
+      rt.id::text,
+      rt.slug,
+      rt.title,
+      rt.price_ugx,
+      rt.inventory_count,
+      room_type_units_available(rt.id, ${checkIn}::date, ${checkOut}::date)::int as available_count,
+      rt.is_published,
+      rt.archived_at::text,
+      rt.sort_order
+    from room_types rt
+    where rt.is_published = true
+      and rt.archived_at is null
+    order by rt.sort_order asc, rt.title asc
+  `) as GroupBookingRoomOption[];
+
+  return rows.map((room) => ({
+    ...room,
+    price_ugx: Number(room.price_ugx),
+    inventory_count: Number(room.inventory_count),
+    available_count: Number(room.available_count),
+    sort_order: Number(room.sort_order)
+  }));
 }
 
 export async function getRoomsManagementData(): Promise<{

@@ -26,13 +26,21 @@ export default async function FolioPage({
         <Link href="/bookings" className="hover:underline">
           Bookings
         </Link>
-        <span className="mx-2">›</span>
+        <span className="mx-2">{">"}</span>
         <span className="font-mono">{booking.reference}</span>
-        <span className="mx-2">›</span>
+        {booking.group_id && (
+          <>
+            <span className="mx-2">{">"}</span>
+            <Link href={`/groups/${booking.group_id}`} className="hover:underline">
+              {booking.group_name ?? booking.group_reference ?? "Group"}
+            </Link>
+          </>
+        )}
+        <span className="mx-2">{">"}</span>
         <Link href={`/bookings/${booking.id}`} className="hover:underline">
           History
         </Link>
-        <span className="mx-2">›</span>
+        <span className="mx-2">{">"}</span>
         <span>Folio</span>
       </nav>
 

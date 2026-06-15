@@ -21,6 +21,12 @@ export type BookingFormInitial = {
   notes: string;
 };
 
+export type BookingFormGroup = {
+  id: string;
+  reference: string;
+  groupName: string;
+};
+
 function fmtUgx(n: number): string {
   return new Intl.NumberFormat("en-UG").format(n) + " UGX";
 }
@@ -60,13 +66,15 @@ export function BookingForm({
   rooms,
   bookingId,
   status,
-  initial
+  initial,
+  group
 }: {
   mode: "create" | "edit";
   rooms: RoomOption[];
   bookingId?: string;
   status?: "confirmed" | "checked_in";
   initial?: BookingFormInitial;
+  group?: BookingFormGroup | null;
 }) {
   const router = useRouter();
   const today = todayISO();
@@ -139,12 +147,28 @@ export function BookingForm({
           </p>
         </div>
         <Link
-          href={isEdit && bookingId ? `/bookings/${bookingId}/folio` : "/front-desk"}
+          href={
+            isEdit && bookingId
+              ? `/bookings/${bookingId}/folio`
+              : group
+                ? `/groups/${group.id}`
+                : "/front-desk"
+          }
           className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
         >
-          ← Cancel
+          Cancel
         </Link>
       </header>
+
+      {!isEdit && group && (
+        <div className="rounded-2xl border border-oliveMuted-200 bg-oliveMuted-50 px-4 py-3 text-sm text-oliveMuted-700">
+          This booking will be added to <span className="font-semibold">{group.groupName}</span>{" "}
+          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-oliveMuted-500">
+            ({group.reference})
+          </span>
+          .
+        </div>
+      )}
 
       {isCheckedIn && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -161,6 +185,7 @@ export function BookingForm({
 
       <form onSubmit={handleSubmit} className="grid gap-5">
         {isEdit && bookingId && <input type="hidden" name="bookingId" value={bookingId} />}
+        {!isEdit && group && <input type="hidden" name="groupId" value={group.id} />}
 
         {/* Room + dates */}
         <div className="surface-card grid gap-4 p-5">

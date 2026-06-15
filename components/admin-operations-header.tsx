@@ -11,6 +11,7 @@ const primaryNavigation = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/front-desk", label: "Front Desk" },
   { href: "/bookings", label: "Bookings" },
+  { href: "/groups", label: "Groups" },
   { href: "/night-audit", label: "Night Audit" },
   { href: "/guests", label: "Guests" },
   { href: "/housekeeping", label: "Housekeeping" },

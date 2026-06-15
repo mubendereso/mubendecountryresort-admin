@@ -344,6 +344,17 @@ function BookingCard({
             <p className="mt-1.5 truncate text-sm font-semibold text-oliveMuted-700">
               {booking.room_type_title}
             </p>
+            {booking.group_id && (
+              <Link
+                href={`/groups/${booking.group_id}`}
+                className="mt-1 inline-flex items-center gap-1 rounded-full border border-oliveMuted-200 bg-oliveMuted-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.13em] text-oliveMuted-600 transition hover:bg-oliveMuted-100"
+              >
+                Group
+                <span className="normal-case tracking-normal">
+                  {booking.group_name ?? booking.group_reference ?? "linked"}
+                </span>
+              </Link>
+            )}
             <p className="mt-1 text-xs text-oliveMuted-500">
               {booking.room_unit_name ?? "Room not assigned"}
             </p>

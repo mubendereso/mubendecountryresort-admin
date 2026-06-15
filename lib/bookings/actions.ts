@@ -174,6 +174,7 @@ export async function createStaffBookingAction(
   const guestEmail = String(formData.get("guestEmail") ?? "").trim().toLowerCase() || null;
   const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const groupId = String(formData.get("groupId") ?? "").trim() || null;
   const agreedRoomPrice = Math.round(
     Number(String(formData.get("agreedRoomPriceUgx") ?? "0").replace(/[,\s]/g, ""))
   );
@@ -188,6 +189,9 @@ export async function createStaffBookingAction(
   if (!guestPhone) return { ok: false, error: "Please enter a contact phone number." };
   if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
     return { ok: false, error: "Please enter a valid email address (or leave it blank)." };
+  }
+  if (groupId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(groupId)) {
+    return { ok: false, error: "Please select a valid group." };
   }
   const textError = validateBookingTextFields({
     roomTypeSlug,
@@ -235,6 +239,20 @@ export async function createStaffBookingAction(
       return { ok: false, error: "Deposit cannot be greater than the final room price." };
     }
 
+    const groupRows =
+      groupId
+        ? ((await sql`
+            SELECT id::text, reference, group_name
+            FROM reservation_groups
+            WHERE id = ${groupId}::uuid
+            LIMIT 1
+          `) as { id: string; reference: string; group_name: string }[])
+        : [];
+    const bookingGroup = groupRows[0] ?? null;
+    if (groupId && !bookingGroup) {
+      return { ok: false, error: "That group could not be found." };
+    }
+
     const rows = (await sql`
       WITH created AS (
         SELECT booking_id, reference, quoted_total_ugx
@@ -253,6 +271,14 @@ export async function createStaffBookingAction(
           ${session.userId}::uuid
         )
       ),
+      grouped AS (
+        UPDATE bookings b
+        SET group_id = ${groupId}::uuid
+        FROM created c
+        WHERE b.id = c.booking_id
+          AND ${groupId}::uuid IS NOT NULL
+        RETURNING b.id
+      ),
       deposit_payment AS (
         INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
         SELECT
@@ -269,7 +295,8 @@ export async function createStaffBookingAction(
         c.booking_id::text,
         c.reference,
         c.quoted_total_ugx,
-        (SELECT count(*) FROM deposit_payment) AS deposit_payment_count
+        (SELECT count(*) FROM deposit_payment) AS deposit_payment_count,
+        (SELECT count(*) FROM grouped) AS grouped_count
       FROM created c
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
@@ -281,13 +308,18 @@ export async function createStaffBookingAction(
       action: "booking.created",
       entityType: "booking",
       entityId: rows[0].booking_id,
-      summary: `Created booking ${rows[0].reference} for ${guestFullName}.`,
+      summary: bookingGroup
+        ? `Created booking ${rows[0].reference} for ${guestFullName} under group ${bookingGroup.group_name}.`
+        : `Created booking ${rows[0].reference} for ${guestFullName}.`,
       context: {
         bookingId: rows[0].booking_id,
         reference: rows[0].reference,
         roomTypeId: roomType.id,
         roomTypeTitle: roomType.title,
         roomTypeSlug,
+        groupId,
+        groupReference: bookingGroup?.reference ?? null,
+        groupName: bookingGroup?.group_name ?? null,
         checkIn,
         checkOut,
         guestsAdults,
@@ -305,9 +337,28 @@ export async function createStaffBookingAction(
       }
     });
 
+    if (bookingGroup) {
+      await recordAuditLog({
+        actorId: session.userId,
+        actorEmail: session.email,
+        action: "reservation_group.booking_attached",
+        entityType: "reservation_group",
+        entityId: bookingGroup.id,
+        summary: `Attached booking ${rows[0].reference} to group ${bookingGroup.group_name}.`,
+        context: {
+          bookingId: rows[0].booking_id,
+          bookingReference: rows[0].reference,
+          groupId: bookingGroup.id,
+          groupReference: bookingGroup.reference,
+          groupName: bookingGroup.group_name
+        }
+      });
+    }
+
     revalidatePath("/dashboard");
     revalidatePath("/front-desk");
     revalidatePath("/bookings");
+    if (bookingGroup) revalidatePath(`/groups/${bookingGroup.id}`);
 
     return { ok: true, bookingId: rows[0].booking_id, reference: rows[0].reference };
   } catch (err) {

@@ -14,6 +14,9 @@ export async function getBookingById(id: string): Promise<BookingRow | null> {
       b.room_type_id::text,
       rt.title AS room_type_title,
       COALESCE(rt.cover_image_url, rt.gallery[1]) AS room_image_url,
+      b.group_id::text,
+      rg.reference AS group_reference,
+      rg.group_name AS group_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -37,6 +40,7 @@ export async function getBookingById(id: string): Promise<BookingRow | null> {
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
+    LEFT JOIN reservation_groups rg ON rg.id = b.group_id
     LEFT JOIN LATERAL (
       SELECT sum(
         CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
@@ -66,6 +70,9 @@ export async function listBookings(): Promise<BookingRow[]> {
       b.room_type_id::text,
       rt.title AS room_type_title,
       COALESCE(rt.cover_image_url, rt.gallery[1]) AS room_image_url,
+      b.group_id::text,
+      rg.reference AS group_reference,
+      rg.group_name AS group_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -89,6 +96,7 @@ export async function listBookings(): Promise<BookingRow[]> {
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
+    LEFT JOIN reservation_groups rg ON rg.id = b.group_id
     LEFT JOIN LATERAL (
       SELECT sum(
         CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END

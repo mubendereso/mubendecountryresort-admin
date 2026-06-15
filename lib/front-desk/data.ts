@@ -7,6 +7,9 @@ export type FrontDeskBooking = {
   id: string;
   reference: string;
   room_type_title: string;
+  group_id: string | null;
+  group_reference: string | null;
+  group_name: string | null;
   check_in: string;
   check_out: string;
   guests_adults: number;
@@ -45,6 +48,9 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.id::text,
       b.reference,
       rt.title AS room_type_title,
+      b.group_id::text,
+      rg.reference AS group_reference,
+      rg.group_name AS group_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -61,6 +67,7 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
+    LEFT JOIN reservation_groups rg ON rg.id = b.group_id
     WHERE b.check_in = ${today}::date
       AND b.status = 'confirmed'
     ORDER BY b.created_at ASC
@@ -70,6 +77,9 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.id::text,
       b.reference,
       rt.title AS room_type_title,
+      b.group_id::text,
+      rg.reference AS group_reference,
+      rg.group_name AS group_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -86,6 +96,7 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     FROM bookings b
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
+    LEFT JOIN reservation_groups rg ON rg.id = b.group_id
     WHERE b.check_out = ${today}::date
       AND b.status = 'checked_in'
     ORDER BY b.created_at ASC

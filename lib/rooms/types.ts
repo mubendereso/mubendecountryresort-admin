@@ -36,6 +36,18 @@ export type RoomManagementSummary = {
   archivedRoomTypes: number;
 };
 
+export type GroupBookingRoomOption = {
+  id: string;
+  slug: string;
+  title: string;
+  price_ugx: number;
+  inventory_count: number;
+  available_count: number;
+  is_published: boolean;
+  archived_at: string | null;
+  sort_order: number;
+};
+
 export type AvailabilityBookingRow = {
   reference: string;
   check_in: string;

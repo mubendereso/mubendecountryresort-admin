@@ -53,6 +53,15 @@ export default async function EditBookingPage({
       rooms={roomOptions}
       bookingId={booking.id}
       status={booking.status as "confirmed" | "checked_in"}
+      group={
+        booking.group_id
+          ? {
+              id: booking.group_id,
+              reference: booking.group_reference ?? "",
+              groupName: booking.group_name ?? "Group"
+            }
+          : undefined
+      }
       initial={{
         roomSlug: currentRoom?.slug ?? roomOptions[0]?.slug ?? "",
         checkIn: booking.check_in,

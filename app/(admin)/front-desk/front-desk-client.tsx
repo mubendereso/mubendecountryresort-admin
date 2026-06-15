@@ -209,6 +209,17 @@ function BookingCard({
               <p className="text-[10px] font-semibold uppercase tracking-[0.19em] text-oliveMuted-500">{isArrival ? "Expected arrival" : "Due to depart"}</p>
               <h3 className="mt-1 truncate font-serif text-[22px] font-semibold tracking-[-0.01em] text-[#2a241a]">{booking.guest_full_name}</h3>
               <p className="mt-1 font-mono text-[11px] tracking-wide text-oliveMuted-500">{booking.reference}</p>
+              {booking.group_id && (
+                <Link
+                  href={`/groups/${booking.group_id}`}
+                  className="mt-2 inline-flex items-center gap-1 rounded-full border border-oliveMuted-200 bg-oliveMuted-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.13em] text-oliveMuted-600 transition hover:bg-oliveMuted-100"
+                >
+                  Group
+                  <span className="normal-case tracking-normal">
+                    {booking.group_name ?? booking.group_reference ?? "linked"}
+                  </span>
+                </Link>
+              )}
             </div>
           </div>
           <div className="text-right">
@@ -386,11 +397,28 @@ export function FrontDeskClient({ initialData }: { initialData: FrontDeskData })
           <div className="flex flex-wrap items-stretch gap-3">
             <QuickStat icon={<BedIcon />} label="In house" value={inHouseCount} detail="guests" />
             <QuickStat icon={<CalendarIcon />} label="Actions today" value={totalActions} detail="remaining" />
-            <Link href="/bookings/new" className="group flex min-h-[68px] items-center gap-3 rounded-[20px] bg-oliveMuted-600 px-5 py-3 text-canvas-light shadow-[0_14px_30px_rgba(82,88,69,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-oliveMuted-500 hover:shadow-[0_18px_36px_rgba(82,88,69,0.3)] active:translate-y-0">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xl font-light transition-transform duration-200 group-hover:rotate-90">+</span>
+            <Link
+              href="/bookings/new"
+              className="group flex min-h-[68px] items-center gap-3 rounded-[20px] bg-oliveMuted-600 px-5 py-3 text-canvas-light shadow-[0_14px_30px_rgba(82,88,69,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-oliveMuted-500 hover:shadow-[0_18px_36px_rgba(82,88,69,0.3)] active:translate-y-0"
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xl font-light transition-transform duration-200 group-hover:rotate-90">
+                +
+              </span>
               <span>
                 <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-canvas-light/70">Reservation</span>
                 <span className="mt-0.5 block text-sm font-semibold">New booking</span>
+              </span>
+            </Link>
+            <Link
+              href="/bookings/new/group"
+              className="group flex min-h-[68px] items-center gap-3 rounded-[20px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-oliveMuted-600 shadow-[0_14px_30px_rgba(55,43,30,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_36px_rgba(55,43,30,0.12)] active:translate-y-0"
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-stoneWarm-100 text-lg font-light transition-transform duration-200 group-hover:rotate-90">
+                +
+              </span>
+              <span>
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Reservation</span>
+                <span className="mt-0.5 block text-sm font-semibold">Group booking</span>
               </span>
             </Link>
           </div>
