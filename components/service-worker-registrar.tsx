@@ -12,7 +12,16 @@ export function ServiceWorkerRegistrar() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
-    if (process.env.NODE_ENV !== "production") return;
+
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "::1";
+
+    // Keep the PWA available on localhost for local verification, but avoid
+    // registering in other non-production environments where HMR-like flows
+    // may depend on a clean, un-cached page state.
+    if (process.env.NODE_ENV !== "production" && !isLocalhost) return;
 
     const controller = new AbortController();
     let activeRegistration: ServiceWorkerRegistration | null = null;
