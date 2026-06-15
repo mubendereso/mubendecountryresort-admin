@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { recordAuditLog } from "@/lib/audit/log";
 import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import type { FolioCategory, PaymentMethod } from "./types";
@@ -61,6 +62,21 @@ export async function postChargeAction(formData: FormData): Promise<void> {
     )
   `;
 
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "folio.charge_posted",
+    entityType: "booking",
+    entityId: bookingId,
+    summary: `Posted a ${category} charge of ${amount} UGX.`,
+    context: {
+      bookingId,
+      description,
+      amountUgx: amount,
+      category
+    }
+  });
+
   revalidatePath(`/bookings/${bookingId}/folio`);
 }
 
@@ -77,11 +93,32 @@ export async function voidChargeAction(formData: FormData): Promise<void> {
   if (!chargeId || !bookingId) throw new Error("Missing charge or booking ID.");
 
   const sql = getSql();
-  await sql`
+  const rows = (await sql`
     UPDATE folio_charges
     SET voided_at = now(), voided_by = ${session.userId}::uuid
     WHERE id = ${chargeId}::uuid AND voided_at IS NULL
-  `;
+    RETURNING description, amount_ugx, category
+  `) as { description: string; amount_ugx: string | number; category: string }[];
+
+  if (rows.length === 0) {
+    throw new Error("Charge not found or already voided.");
+  }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "folio.charge_voided",
+    entityType: "booking",
+    entityId: bookingId,
+    summary: `Voided a ${rows[0].category} charge of ${Number(rows[0].amount_ugx)} UGX.`,
+    context: {
+      bookingId,
+      chargeId,
+      description: rows[0].description,
+      amountUgx: Number(rows[0].amount_ugx),
+      category: rows[0].category
+    }
+  });
 
   revalidatePath(`/bookings/${bookingId}/folio`);
 }
@@ -163,6 +200,22 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
   if ((rows[0]?.payment_count ?? 0) === 0) {
     throw new Error("Booking not found.");
   }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "folio.payment_recorded",
+    entityType: "booking",
+    entityId: bookingId,
+    summary: `Recorded a ${method} payment of ${amount} UGX${reference ? ` with reference ${reference}` : ""}.`,
+    context: {
+      bookingId,
+      amountUgx: amount,
+      method,
+      reference,
+      accommodationChargeCreated: (rows[0]?.accommodation_charge_count ?? 0) > 0
+    }
+  });
 
   revalidatePath(`/bookings/${bookingId}/folio`);
 }
@@ -261,6 +314,23 @@ export async function adjustRoomPriceAction(formData: FormData): Promise<void> {
         : "Final room price must be lower than the current room price."
     );
   }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "folio.room_price_adjusted",
+    entityType: "booking",
+    entityId: bookingId,
+    summary: `Adjusted the room price to ${finalRoomPrice} UGX.`,
+    context: {
+      bookingId,
+      finalRoomPriceUgx: finalRoomPrice,
+      currentRoomPriceUgx: currentRoomPrice,
+      accommodationTotalUgx: accommodationTotal,
+      discountDeltaUgx: currentRoomPrice - finalRoomPrice,
+      reason
+    }
+  });
 
   revalidatePath(`/bookings/${bookingId}/folio`);
 }

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { recordAuditLog } from "@/lib/audit/log";
+import { getBookingById } from "./data";
 import type { BookingStatus } from "./types";
 
 // Only these forward-only transitions are allowed via the admin UI.
@@ -55,15 +57,12 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
   }
 
   const sql = getSql();
-  const rows = (await sql`
-    SELECT status FROM bookings WHERE id = ${id}::uuid
-  `) as { status: BookingStatus }[];
+  const beforeBooking = await getBookingById(id);
+  if (!beforeBooking) throw new Error("Booking not found.");
 
-  if (rows.length === 0) throw new Error("Booking not found.");
-
-  const allowed = VALID_TRANSITIONS[rows[0].status] ?? [];
+  const allowed = VALID_TRANSITIONS[beforeBooking.status] ?? [];
   if (!allowed.includes(newStatus)) {
-    throw new Error(`Cannot transition from ${rows[0].status} to ${newStatus}.`);
+    throw new Error(`Cannot transition from ${beforeBooking.status} to ${newStatus}.`);
   }
 
   await sql`UPDATE bookings SET status = ${newStatus} WHERE id = ${id}::uuid`;
@@ -122,6 +121,30 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
         AND b.room_unit_id = ru.id
     `;
   }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: `booking.${newStatus}`,
+    entityType: "booking",
+    entityId: id,
+    summary:
+      newStatus === "checked_in"
+        ? `Checked in ${beforeBooking.reference}${beforeBooking.room_unit_name ? ` into ${beforeBooking.room_unit_name}` : ""}.`
+        : newStatus === "checked_out"
+          ? `Checked out ${beforeBooking.reference}.`
+          : `${beforeBooking.reference} changed status to ${newStatus.replaceAll("_", " ")}.`,
+    context: {
+      bookingId: id,
+      reference: beforeBooking.reference,
+      fromStatus: beforeBooking.status,
+      toStatus: newStatus,
+      roomTypeTitle: beforeBooking.room_type_title,
+      roomUnitName: beforeBooking.room_unit_name,
+      accommodationChargePosted: newStatus === "checked_in",
+      prepaymentRecorded: newStatus === "checked_in" && beforeBooking.total_paid_ugx > 0
+    }
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/front-desk");
@@ -191,18 +214,19 @@ export async function createStaffBookingAction(
   const sql = getSql();
   try {
     const quoteRows = (await sql`
-      SELECT price_ugx
+      SELECT id::text, title, price_ugx
       FROM room_types
       WHERE slug = ${roomTypeSlug}
         AND is_published = true
       LIMIT 1
-    `) as { price_ugx: string }[];
+    `) as { id: string; title: string; price_ugx: string }[];
 
     if (!quoteRows[0]) {
       return { ok: false, error: "That room type is no longer available." };
     }
 
-    const quotedTotal = Number(quoteRows[0].price_ugx) * nightsBetween(checkIn, checkOut);
+    const roomType = quoteRows[0];
+    const quotedTotal = Number(roomType.price_ugx) * nightsBetween(checkIn, checkOut);
     if (agreedRoomPrice > quotedTotal) {
       return { ok: false, error: "Agreed room price cannot be greater than the standard room total." };
     }
@@ -250,6 +274,36 @@ export async function createStaffBookingAction(
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
     if (!rows[0]) return { ok: false, error: "Booking could not be created. Please try again." };
+
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "booking.created",
+      entityType: "booking",
+      entityId: rows[0].booking_id,
+      summary: `Created booking ${rows[0].reference} for ${guestFullName}.`,
+      context: {
+        bookingId: rows[0].booking_id,
+        reference: rows[0].reference,
+        roomTypeId: roomType.id,
+        roomTypeTitle: roomType.title,
+        roomTypeSlug,
+        checkIn,
+        checkOut,
+        guestsAdults,
+        guestsChildren,
+        guestFullName,
+        guestPhone,
+        guestEmail,
+        specialRequests,
+        notes,
+        quotedTotalUgx: quotedTotal,
+        agreedRoomPriceUgx: agreedRoomPrice > 0 ? agreedRoomPrice : null,
+        depositAmountUgx: depositAmount > 0 ? depositAmount : null,
+        depositMethod: depositAmount > 0 ? depositMethod : null,
+        depositReference
+      }
+    });
 
     revalidatePath("/dashboard");
     revalidatePath("/front-desk");
@@ -313,6 +367,9 @@ export async function modifyBookingAction(
 
   const sql = getSql();
   try {
+    const beforeBooking = await getBookingById(bookingId);
+    if (!beforeBooking) return { ok: false, error: "Booking not found." };
+
     const rows = (await sql`
       SELECT booking_id::text, reference, quoted_total_ugx
       FROM modify_booking(
@@ -382,8 +439,47 @@ export async function modifyBookingAction(
         AND NOT EXISTS (
           SELECT 1 FROM room_units ru
           WHERE ru.id = b.room_unit_id AND ru.room_type_id = b.room_type_id
-        )
+      )
     `;
+
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "booking.modified",
+      entityType: "booking",
+      entityId: bookingId,
+      summary: `Updated booking ${rows[0].reference}.`,
+      context: {
+        bookingId,
+        reference: rows[0].reference,
+        before: {
+          roomTypeTitle: beforeBooking.room_type_title,
+          checkIn: beforeBooking.check_in,
+          checkOut: beforeBooking.check_out,
+          guestsAdults: beforeBooking.guests_adults,
+          guestsChildren: beforeBooking.guests_children,
+          guestFullName: beforeBooking.guest_full_name,
+          guestEmail: beforeBooking.guest_email,
+          guestPhone: beforeBooking.guest_phone,
+          specialRequests: beforeBooking.special_requests,
+          notes: beforeBooking.notes,
+          roomUnitName: beforeBooking.room_unit_name,
+          quotedTotalUgx: beforeBooking.quoted_total_ugx
+        },
+        after: {
+          roomTypeSlug,
+          checkIn,
+          checkOut,
+          guestsAdults,
+          guestsChildren,
+          guestFullName,
+          guestEmail,
+          guestPhone,
+          specialRequests,
+          notes
+        }
+      }
+    });
 
     revalidatePath("/dashboard");
     revalidatePath("/front-desk");

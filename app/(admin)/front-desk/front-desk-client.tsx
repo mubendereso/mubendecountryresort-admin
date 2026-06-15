@@ -253,10 +253,11 @@ function BookingCard({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stoneWarm-200/70 pt-4">
-          <div className="flex items-center gap-2">
-            <Link href={`/bookings/${booking.id}/edit`} className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition-all duration-200 hover:bg-stoneWarm-100">Edit stay</Link>
-            <Link href={`/bookings/${booking.id}/folio`} className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition-all duration-200 hover:bg-stoneWarm-100">View folio</Link>
-          </div>
+        <div className="flex items-center gap-2">
+          <Link href={`/bookings/${booking.id}/edit`} className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition-all duration-200 hover:bg-stoneWarm-100">Edit stay</Link>
+          <Link href={`/bookings/${booking.id}/folio`} className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition-all duration-200 hover:bg-stoneWarm-100">View folio</Link>
+          <Link href={`/bookings/${booking.id}`} className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition-all duration-200 hover:bg-stoneWarm-100">View history</Link>
+        </div>
           <button
             type="button"
             disabled={pending}

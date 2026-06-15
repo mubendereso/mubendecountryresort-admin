@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { recordAuditLog } from "@/lib/audit/log";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getSql } from "@/lib/db/client";
 import {
@@ -19,7 +20,7 @@ function readRequiredString(formData: FormData, key: string): string {
 }
 
 export async function updateRoomUnitHousekeepingAction(formData: FormData): Promise<void> {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
 
   const id = readRequiredString(formData, "id");
   const status = readRequiredString(formData, "status") as HousekeepingStatus;
@@ -40,12 +41,27 @@ export async function updateRoomUnitHousekeepingAction(formData: FormData): Prom
     UPDATE room_units
     SET housekeeping_status = ${status}, notes = ${notes}
     WHERE id = ${id}::uuid
-    RETURNING id
-  `) as { id: string }[];
+    RETURNING id, unit_name
+  `) as { id: string; unit_name: string }[];
 
   if (rows.length === 0) {
     throw new Error("Room unit not found.");
   }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "housekeeping.updated",
+    entityType: "room_unit",
+    entityId: id,
+    summary: `Marked ${rows[0].unit_name} as ${status.replaceAll("_", " ")}.`,
+    context: {
+      roomUnitId: id,
+      unitName: rows[0].unit_name,
+      status,
+      notes
+    }
+  });
 
   revalidatePath("/housekeeping");
   revalidatePath("/dashboard");

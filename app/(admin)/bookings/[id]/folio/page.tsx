@@ -29,6 +29,10 @@ export default async function FolioPage({
         <span className="mx-2">›</span>
         <span className="font-mono">{booking.reference}</span>
         <span className="mx-2">›</span>
+        <Link href={`/bookings/${booking.id}`} className="hover:underline">
+          History
+        </Link>
+        <span className="mx-2">›</span>
         <span>Folio</span>
       </nav>
 

@@ -421,6 +421,12 @@ function BookingCard({
         >
           View folio
         </Link>
+        <Link
+          href={`/bookings/${booking.id}`}
+          className="rounded-full px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+        >
+          View history
+        </Link>
         {primaryTransition && (
           <button
             type="button"

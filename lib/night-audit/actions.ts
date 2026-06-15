@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { recordAuditLog } from "@/lib/audit/log";
 import { getNightAuditData } from "./data";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,7 +61,7 @@ export async function closeNightAuditAction(formData: FormData): Promise<void> {
   const snapshot = await getNightAuditData(businessDate);
   const cashDifferenceUgx = cashCountedUgx - openingFloatUgx - snapshot.summary.cash_total_ugx;
 
-  await sql`
+  const inserted = (await sql`
     INSERT INTO night_audit_closures (
       business_date,
       closed_by,
@@ -119,7 +120,28 @@ export async function closeNightAuditAction(formData: FormData): Promise<void> {
       ${snapshot.summary.pending_payment_amount_ugx}::bigint,
       ${notes}
     )
-  `;
+    RETURNING id::text
+  `) as { id: string }[];
+
+  const closureId = inserted[0]?.id;
+  if (closureId) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "night_audit.closed",
+      entityType: "night_audit_close",
+      entityId: closureId,
+      summary: `Closed night audit for ${businessDate}.`,
+      context: {
+        businessDate,
+        closureId,
+        openingFloatUgx,
+        cashCountedUgx,
+        cashDifferenceUgx,
+        notes
+      }
+    });
+  }
 
   revalidatePath("/night-audit");
   redirect(nightAuditPath(businessDate, "Night audit closed."));
@@ -160,6 +182,20 @@ export async function voidNightAuditCloseAction(formData: FormData): Promise<voi
   if (rows.length === 0) {
     redirect(nightAuditPath(businessDate, "That close record could not be voided."));
   }
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "night_audit.voided",
+    entityType: "night_audit_close",
+    entityId: closureId,
+    summary: `Voided night audit close for ${rows[0].business_date}.`,
+    context: {
+      closureId,
+      businessDate: rows[0].business_date,
+      reason
+    }
+  });
 
   revalidatePath("/night-audit");
   redirect(nightAuditPath(rows[0].business_date, "Night audit close voided."));
