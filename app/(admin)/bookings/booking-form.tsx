@@ -78,6 +78,7 @@ export function BookingForm({
   const [checkOut, setCheckOut] = useState(initial?.checkOut ?? addDays(today, 1));
   const [adults, setAdults] = useState(initial?.adults ?? 1);
   const [children, setChildren] = useState(initial?.children ?? 0);
+  const [agreedRoomPrice, setAgreedRoomPrice] = useState(0);
   const [depositAmount, setDepositAmount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -88,7 +89,11 @@ export function BookingForm({
   );
   const nights = nightsBetween(checkIn, checkOut);
   const total = selectedRoom ? selectedRoom.priceUgx * nights : 0;
-  const balanceDue = Math.max(0, total - depositAmount);
+  const finalRoomPrice = agreedRoomPrice > 0 ? agreedRoomPrice : total;
+  const discountAmount = Math.max(0, total - finalRoomPrice);
+  const discountPercent = total > 0 ? (discountAmount / total) * 100 : 0;
+  const invalidAgreedPrice = agreedRoomPrice > total;
+  const balanceDue = Math.max(0, finalRoomPrice - depositAmount);
 
   // A checked-in guest may keep a past check-in date; otherwise no past dates.
   const checkInMin = isCheckedIn ? undefined : today;
@@ -304,6 +309,45 @@ export function BookingForm({
         {!isEdit && (
           <div className="surface-card grid gap-4 p-5">
             <div>
+              <p className={LABEL_CLASS}>Agreed Room Price</p>
+              <p className="mt-1 text-sm text-oliveMuted-600">
+                Optional. Enter the final room price agreed with the guest. The folio keeps the
+                standard charge and posts the difference as a discount.
+              </p>
+            </div>
+
+            <div className="grid gap-1.5">
+              <label htmlFor="agreedRoomPriceUgx" className={LABEL_CLASS}>
+                Final Room Price (UGX)
+              </label>
+              <UgxAmountInput
+                id="agreedRoomPriceUgx"
+                name="agreedRoomPriceUgx"
+                value={agreedRoomPrice}
+                onValueChange={setAgreedRoomPrice}
+                placeholder={`Standard price ${new Intl.NumberFormat("en-UG").format(total)}`}
+                className={FIELD_CLASS}
+              />
+              {invalidAgreedPrice ? (
+                <p className="text-xs font-medium text-red-600">
+                  Final room price cannot exceed the standard total.
+                </p>
+              ) : discountAmount > 0 ? (
+                <p className="text-xs font-medium text-green-700">
+                  Discount {fmtUgx(discountAmount)} ({discountPercent.toFixed(1)}%)
+                </p>
+              ) : (
+                <p className="text-xs text-oliveMuted-500">
+                  Leave blank to use the standard total of {fmtUgx(total)}.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isEdit && (
+          <div className="surface-card grid gap-4 p-5">
+            <div>
               <p className={LABEL_CLASS}>Deposit Received</p>
               <p className="mt-1 text-sm text-oliveMuted-600">
                 Optional. The room total is posted to Total Charges; when entered, this payment is recorded in Total Paid and reduces Balance Due.
@@ -349,6 +393,11 @@ export function BookingForm({
                 disabled={depositAmount <= 0}
               />
             </div>
+            {depositAmount > finalRoomPrice && (
+              <p className="text-xs font-medium text-red-600">
+                Deposit cannot exceed the final room price of {fmtUgx(finalRoomPrice)}.
+              </p>
+            )}
           </div>
         )}
 
@@ -356,11 +405,16 @@ export function BookingForm({
         <div className="surface-card flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
             <p className={LABEL_CLASS}>Total</p>
-            <p className="mt-1 text-2xl font-semibold">{fmtUgx(total)}</p>
+            <p className="mt-1 text-2xl font-semibold">{fmtUgx(finalRoomPrice)}</p>
             <p className="text-xs text-oliveMuted-500">
               {nights} {nights === 1 ? "night" : "nights"}
               {selectedRoom ? ` × ${fmtUgx(selectedRoom.priceUgx)}` : ""}
             </p>
+            {!isEdit && discountAmount > 0 && (
+              <p className="mt-2 text-sm font-semibold text-green-700">
+                Standard {fmtUgx(total)} - discount {fmtUgx(discountAmount)}
+              </p>
+            )}
             {!isEdit && depositAmount > 0 && (
               <p className="mt-2 text-sm font-semibold text-oliveMuted-700">
                 Deposit {fmtUgx(depositAmount)} - balance {fmtUgx(balanceDue)}
@@ -369,7 +423,7 @@ export function BookingForm({
           </div>
           <button
             type="submit"
-            disabled={isPending || nights <= 0}
+            disabled={isPending || nights <= 0 || invalidAgreedPrice || depositAmount > finalRoomPrice}
             className="rounded-2xl bg-oliveMuted-600 px-6 py-3 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : isEdit ? "Save Changes" : "Create Booking"}

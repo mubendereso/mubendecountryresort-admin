@@ -16,6 +16,7 @@ export async function getFolioData(bookingId: string): Promise<FolioData> {
         fc.description,
         fc.amount_ugx,
         fc.category,
+        fc.discount_scope,
         fc.posted_by::text,
         au.full_name AS posted_by_name,
         to_char(fc.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS posted_at,

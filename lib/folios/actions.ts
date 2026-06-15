@@ -10,12 +10,11 @@ const VALID_CATEGORIES: FolioCategory[] = [
   "food",
   "beverage",
   "other",
-  "tax",
-  "discount"
+  "tax"
 ];
 
 const VALID_METHODS: PaymentMethod[] = [
-  "pesapal",
+  "pesapal_manual",
   "cash",
   "mpesa",
   "card",
@@ -91,11 +90,16 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
   const session = await requireApprovedAdminRole();
 
   const bookingId = formData.get("booking_id") as string;
-  const method = formData.get("method") as PaymentMethod;
+  const submittedMethod = formData.get("method") as PaymentMethod;
+  const method: PaymentMethod =
+    submittedMethod === "pesapal" ? "pesapal_manual" : submittedMethod;
   const reference = (formData.get("reference") as string)?.trim() || null;
 
   if (!bookingId) throw new Error("Missing booking ID.");
   if (!VALID_METHODS.includes(method)) throw new Error("Invalid payment method.");
+  if (method === "pesapal_manual" && !reference) {
+    throw new Error("Enter the Pesapal transaction reference.");
+  }
   if ((reference?.length ?? 0) > MAX_PAYMENT_REFERENCE_LENGTH) {
     throw new Error("Payment reference is too long.");
   }
@@ -123,7 +127,7 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
       INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
       SELECT
         br.id,
-        br.title || ' â€“ ' ||
+        br.title || ' - ' ||
           (br.check_out::date - br.check_in::date)::text ||
           ' night' ||
           CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END,
@@ -158,6 +162,104 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
 
   if ((rows[0]?.payment_count ?? 0) === 0) {
     throw new Error("Booking not found.");
+  }
+
+  revalidatePath(`/bookings/${bookingId}/folio`);
+}
+
+export async function adjustRoomPriceAction(formData: FormData): Promise<void> {
+  const session = await requireApprovedAdminRole();
+
+  const bookingId = String(formData.get("booking_id") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const finalRoomPrice = parseUgxAmount(formData.get("final_room_price_ugx"));
+
+  if (!bookingId) throw new Error("Missing booking ID.");
+  if (!Number.isFinite(finalRoomPrice) || finalRoomPrice <= 0) {
+    throw new Error("Final room price must be a positive amount.");
+  }
+  if ((reason?.length ?? 0) > MAX_DESCRIPTION_LENGTH) {
+    throw new Error("Discount reason is too long.");
+  }
+
+  const sql = getSql();
+  const rows = (await sql`
+    WITH booking_room AS (
+      SELECT b.id
+      FROM bookings b
+      WHERE b.id = ${bookingId}::uuid
+      FOR UPDATE
+    ),
+    totals AS (
+      SELECT
+        br.id AS booking_id,
+        COALESCE(SUM(fc.amount_ugx) FILTER (
+          WHERE fc.category = 'accommodation' AND fc.voided_at IS NULL
+        ), 0)::bigint AS accommodation_total,
+        COALESCE(SUM(fc.amount_ugx) FILTER (
+          WHERE fc.category = 'discount'
+            AND fc.discount_scope = 'room_price'
+            AND fc.voided_at IS NULL
+        ), 0)::bigint AS room_discount_total
+      FROM booking_room br
+      LEFT JOIN folio_charges fc ON fc.booking_id = br.id
+      GROUP BY br.id
+    ),
+    adjustment AS (
+      INSERT INTO folio_charges (
+        booking_id,
+        description,
+        amount_ugx,
+        category,
+        discount_scope,
+        posted_by
+      )
+      SELECT
+        t.booking_id,
+        'Room price adjusted to ' || ${finalRoomPrice}::bigint::text
+          || ' UGX ('
+          || round(
+            ((t.accommodation_total - ${finalRoomPrice}::bigint)::numeric * 100)
+            / t.accommodation_total,
+            1
+          )::text
+          || '% total discount)'
+          || CASE WHEN ${reason}::text IS NULL THEN '' ELSE ' - ' || ${reason}::text END,
+        (t.accommodation_total - t.room_discount_total) - ${finalRoomPrice}::bigint,
+        'discount',
+        'room_price',
+        ${session.userId}::uuid
+      FROM totals t
+      WHERE t.accommodation_total > 0
+        AND ${finalRoomPrice}::bigint < (t.accommodation_total - t.room_discount_total)
+      RETURNING booking_id
+    )
+    SELECT
+      t.accommodation_total,
+      t.room_discount_total,
+      (t.accommodation_total - t.room_discount_total)::bigint AS current_room_price,
+      (SELECT count(*)::int FROM adjustment) AS adjustment_count
+    FROM totals t
+  `) as {
+    accommodation_total: string;
+    room_discount_total: string;
+    current_room_price: string;
+    adjustment_count: number;
+  }[];
+
+  if (!rows[0]) throw new Error("Booking not found.");
+
+  const accommodationTotal = Number(rows[0].accommodation_total);
+  const currentRoomPrice = Number(rows[0].current_room_price);
+  if (accommodationTotal <= 0) {
+    throw new Error("This folio has no active accommodation charge.");
+  }
+  if (rows[0].adjustment_count === 0) {
+    throw new Error(
+      finalRoomPrice === currentRoomPrice
+        ? "That is already the current room price."
+        : "Final room price must be lower than the current room price."
+    );
   }
 
   revalidatePath(`/bookings/${bookingId}/folio`);

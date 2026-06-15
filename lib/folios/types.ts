@@ -8,6 +8,7 @@ export type FolioCategory =
 
 export type PaymentMethod =
   | "pesapal"
+  | "pesapal_manual"
   | "cash"
   | "mpesa"
   | "card"
@@ -19,6 +20,7 @@ export type FolioCharge = {
   description: string;
   amount_ugx: number;
   category: FolioCategory;
+  discount_scope: "room_price" | null;
   posted_by: string | null;
   posted_by_name: string | null;
   posted_at: string; // ISO 8601 UTC

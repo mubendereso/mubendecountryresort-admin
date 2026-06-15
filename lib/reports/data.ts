@@ -90,7 +90,10 @@ export async function getReportData(from: string, to: string): Promise<ReportDat
     JOIN bookings b ON b.id = fc.booking_id
     JOIN room_types rt ON rt.id = b.room_type_id
     WHERE fc.voided_at IS NULL
-      AND fc.category = 'accommodation'
+      AND (
+        fc.category = 'accommodation'
+        OR (fc.category = 'discount' AND fc.discount_scope = 'room_price')
+      )
       AND (fc.posted_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN ${from}::date AND ${to}::date
     GROUP BY rt.title
     ORDER BY revenue DESC
@@ -99,7 +102,9 @@ export async function getReportData(from: string, to: string): Promise<ReportDat
   const byCategoryQuery = sql`
     SELECT
       fc.category,
-      COALESCE(SUM(fc.amount_ugx), 0)::bigint AS revenue,
+      COALESCE(SUM(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ), 0)::bigint AS revenue,
       count(fc.id)::int AS charge_count
     FROM folio_charges fc
     WHERE fc.voided_at IS NULL

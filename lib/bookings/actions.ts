@@ -74,7 +74,7 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
       INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
       SELECT
         b.id,
-        rt.title || ' – ' ||
+        rt.title || ' - ' ||
           (b.check_out::date - b.check_in::date)::text ||
           ' night' ||
           CASE WHEN (b.check_out::date - b.check_in::date) = 1 THEN '' ELSE 's' END,
@@ -106,10 +106,7 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
       FROM bookings b
       WHERE b.id = ${id}::uuid
         AND b.paid_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM folio_payments
-          WHERE booking_id = ${id}::uuid AND method = 'pesapal'
-        )
+      ON CONFLICT (booking_id) WHERE method = 'pesapal' DO NOTHING
     `;
   }
 
@@ -154,6 +151,9 @@ export async function createStaffBookingAction(
   const guestEmail = String(formData.get("guestEmail") ?? "").trim().toLowerCase() || null;
   const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const agreedRoomPrice = Math.round(
+    Number(String(formData.get("agreedRoomPriceUgx") ?? "0").replace(/[,\s]/g, ""))
+  );
   const depositAmount = Math.round(Number(String(formData.get("depositAmountUgx") ?? "0").replace(/[,\s]/g, "")));
   const depositMethod = String(formData.get("depositMethod") ?? "cash").trim();
   const depositReference = String(formData.get("depositReference") ?? "").trim() || null;
@@ -178,6 +178,9 @@ export async function createStaffBookingAction(
   if (!Number.isFinite(depositAmount) || depositAmount < 0) {
     return { ok: false, error: "Deposit must be zero or a positive amount." };
   }
+  if (!Number.isFinite(agreedRoomPrice) || agreedRoomPrice < 0) {
+    return { ok: false, error: "Agreed room price must be zero or a positive amount." };
+  }
   if ((depositReference?.length ?? 0) > MAX_PAYMENT_REFERENCE_LENGTH) {
     return { ok: false, error: "Deposit reference is too long." };
   }
@@ -187,23 +190,25 @@ export async function createStaffBookingAction(
 
   const sql = getSql();
   try {
-    if (depositAmount > 0) {
-      const quoteRows = (await sql`
-        SELECT price_ugx
-        FROM room_types
-        WHERE slug = ${roomTypeSlug}
-          AND is_published = true
-        LIMIT 1
-      `) as { price_ugx: string }[];
+    const quoteRows = (await sql`
+      SELECT price_ugx
+      FROM room_types
+      WHERE slug = ${roomTypeSlug}
+        AND is_published = true
+      LIMIT 1
+    `) as { price_ugx: string }[];
 
-      if (!quoteRows[0]) {
-        return { ok: false, error: "That room type is no longer available." };
-      }
+    if (!quoteRows[0]) {
+      return { ok: false, error: "That room type is no longer available." };
+    }
 
-      const quotedTotal = Number(quoteRows[0].price_ugx) * nightsBetween(checkIn, checkOut);
-      if (depositAmount > quotedTotal) {
-        return { ok: false, error: "Deposit cannot be greater than the booking total." };
-      }
+    const quotedTotal = Number(quoteRows[0].price_ugx) * nightsBetween(checkIn, checkOut);
+    if (agreedRoomPrice > quotedTotal) {
+      return { ok: false, error: "Agreed room price cannot be greater than the standard room total." };
+    }
+    const finalRoomPrice = agreedRoomPrice > 0 ? agreedRoomPrice : quotedTotal;
+    if (depositAmount > finalRoomPrice) {
+      return { ok: false, error: "Deposit cannot be greater than the final room price." };
     }
 
     const rows = (await sql`
@@ -220,6 +225,7 @@ export async function createStaffBookingAction(
           ${guestEmail}::text,
           ${specialRequests}::text,
           ${notes}::text,
+          ${agreedRoomPrice > 0 ? agreedRoomPrice : null}::bigint,
           ${session.userId}::uuid
         )
       ),
@@ -343,7 +349,7 @@ export async function modifyBookingAction(
         UPDATE folio_charges fc
         SET
           amount_ugx = br.quoted_total_ugx,
-          description = br.title || ' â€“ ' ||
+          description = br.title || ' - ' ||
             (br.check_out::date - br.check_in::date)::text ||
             ' night' ||
             CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END
@@ -356,7 +362,7 @@ export async function modifyBookingAction(
       INSERT INTO folio_charges (booking_id, description, amount_ugx, category, posted_by)
       SELECT
         br.id,
-        br.title || ' â€“ ' ||
+        br.title || ' - ' ||
           (br.check_out::date - br.check_in::date)::text ||
           ' night' ||
           CASE WHEN (br.check_out::date - br.check_in::date) = 1 THEN '' ELSE 's' END,

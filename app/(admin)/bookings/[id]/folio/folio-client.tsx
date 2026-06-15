@@ -4,7 +4,12 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
-import { postChargeAction, voidChargeAction, recordPaymentAction } from "@/lib/folios/actions";
+import {
+  adjustRoomPriceAction,
+  postChargeAction,
+  voidChargeAction,
+  recordPaymentAction
+} from "@/lib/folios/actions";
 import type { AdminRole } from "@/lib/auth/session";
 import type { BookingRow, BookingStatus } from "@/lib/bookings/types";
 import type { FolioCategory, FolioCharge, FolioData, FolioPayment, PaymentMethod } from "@/lib/folios/types";
@@ -92,6 +97,7 @@ const CATEGORY_STYLE: Record<FolioCategory, string> = {
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   pesapal: "Pesapal",
+  pesapal_manual: "Pesapal - Manual",
   cash: "Cash",
   mpesa: "M-Pesa",
   card: "Card",
@@ -100,6 +106,7 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
 
 const METHOD_STYLE: Record<PaymentMethod, string> = {
   pesapal: "bg-indigo-100 text-indigo-800",
+  pesapal_manual: "bg-indigo-100 text-indigo-800",
   cash: "bg-green-100 text-green-800",
   mpesa: "bg-green-100 text-green-800",
   card: "bg-blue-100 text-blue-800",
@@ -260,7 +267,6 @@ function PostChargeForm({
           <option value="food">Food</option>
           <option value="beverage">Beverage</option>
           <option value="tax">Tax</option>
-          <option value="discount">Discount</option>
           <option value="other">Other</option>
         </select>
 
@@ -296,6 +302,83 @@ function PostChargeForm({
 
 // ─── Record payment form ──────────────────────────────────────────────────────
 
+function AdjustRoomPriceForm({
+  bookingId,
+  standardRoomPrice,
+  currentRoomPrice,
+  isPending,
+  onSubmit
+}: {
+  bookingId: string;
+  standardRoomPrice: number;
+  currentRoomPrice: number;
+  isPending: boolean;
+  onSubmit: (fd: FormData) => void;
+}) {
+  const [finalRoomPrice, setFinalRoomPrice] = useState(0);
+  const adjustmentAmount = Math.max(0, currentRoomPrice - finalRoomPrice);
+  const totalDiscountAmount = Math.max(0, standardRoomPrice - finalRoomPrice);
+  const totalDiscountPercent =
+    standardRoomPrice > 0 ? (totalDiscountAmount / standardRoomPrice) * 100 : 0;
+  const invalidFinalPrice = finalRoomPrice > 0 && finalRoomPrice >= currentRoomPrice;
+
+  return (
+    <form
+      className="print:hidden grid gap-3 rounded-2xl border border-stoneWarm-200 bg-stoneWarm-50 p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit(new FormData(e.currentTarget));
+      }}
+    >
+      <div>
+        <p className="text-sm font-semibold">Adjust Room Price</p>
+        <p className="mt-1 text-xs text-oliveMuted-500">
+          Current room price: {fmtUgx(currentRoomPrice)}. Enter the new final price; the
+          difference is posted as a discount.
+        </p>
+      </div>
+      <input type="hidden" name="booking_id" value={bookingId} />
+
+      <div className="grid gap-3 sm:grid-cols-[180px_1fr_auto]">
+        <UgxAmountInput
+          name="final_room_price_ugx"
+          required
+          minLength={1}
+          value={finalRoomPrice}
+          onValueChange={setFinalRoomPrice}
+          placeholder="Final room price"
+          className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
+        />
+        <input
+          name="reason"
+          type="text"
+          placeholder="Reason (optional)"
+          className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
+        />
+        <button
+          type="submit"
+          disabled={
+            isPending || currentRoomPrice <= 0 || finalRoomPrice <= 0 || invalidFinalPrice
+          }
+          className="rounded-2xl border border-oliveMuted-300 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-700 transition hover:bg-oliveMuted-50 disabled:opacity-50"
+        >
+          {isPending ? "Applying..." : "Apply Discount"}
+        </button>
+      </div>
+      {invalidFinalPrice ? (
+        <p className="text-xs font-medium text-red-600">
+          New final price must be lower than {fmtUgx(currentRoomPrice)}.
+        </p>
+      ) : adjustmentAmount > 0 ? (
+        <p className="text-xs font-medium text-green-700">
+          Additional discount {fmtUgx(adjustmentAmount)}. Total room discount{" "}
+          {fmtUgx(totalDiscountAmount)} ({totalDiscountPercent.toFixed(1)}%).
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 function RecordPaymentForm({
   bookingId,
   formKey,
@@ -307,6 +390,8 @@ function RecordPaymentForm({
   isPending: boolean;
   onSubmit: (fd: FormData) => void;
 }) {
+  const [method, setMethod] = useState<PaymentMethod | "">("");
+
   return (
     <form
       key={formKey}
@@ -323,7 +408,8 @@ function RecordPaymentForm({
         <select
           name="method"
           required
-          defaultValue=""
+          value={method}
+          onChange={(event) => setMethod(event.target.value as PaymentMethod)}
           className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
         >
           <option value="" disabled>
@@ -333,7 +419,7 @@ function RecordPaymentForm({
           <option value="mpesa">M-Pesa</option>
           <option value="card">Card</option>
           <option value="transfer">Bank Transfer</option>
-          <option value="pesapal">Pesapal</option>
+          <option value="pesapal_manual">Pesapal Balance Payment</option>
         </select>
 
         <UgxAmountInput
@@ -347,10 +433,20 @@ function RecordPaymentForm({
         <input
           name="reference"
           type="text"
-          placeholder="Reference (optional)"
+          required={method === "pesapal_manual"}
+          placeholder={
+            method === "pesapal_manual"
+              ? "Pesapal transaction reference"
+              : "Reference (optional)"
+          }
           className="rounded-2xl border border-stoneWarm-200 bg-white px-3 py-2 text-sm"
         />
       </div>
+
+      <p className="text-xs text-oliveMuted-500">
+        The original online Pesapal receipt is automatic. Use Pesapal Balance Payment
+        only for a separate staff-verified transaction.
+      </p>
 
       <div className="flex justify-end">
         <button
@@ -378,6 +474,7 @@ export function FolioClient({
 }) {
   const router = useRouter();
   const [chargeFormKey, setChargeFormKey] = useState(0);
+  const [roomPriceFormKey, setRoomPriceFormKey] = useState(0);
   const [paymentFormKey, setPaymentFormKey] = useState(0);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -389,6 +486,15 @@ export function FolioClient({
     .reduce((sum, c) => sum + signedChargeAmount(c), 0);
   const totalPaid = initialFolio.payments.reduce((sum, p) => sum + p.amount_ugx, 0);
   const balanceDue = totalCharges - totalPaid;
+  const accommodationTotal = initialFolio.charges
+    .filter((c) => !c.voided_at && c.category === "accommodation")
+    .reduce((sum, c) => sum + c.amount_ugx, 0);
+  const roomPriceDiscount = initialFolio.charges
+    .filter(
+      (c) => !c.voided_at && c.category === "discount" && c.discount_scope === "room_price"
+    )
+    .reduce((sum, c) => sum + c.amount_ugx, 0);
+  const currentRoomPrice = Math.max(0, accommodationTotal - roomPriceDiscount);
 
   function handleCharge(fd: FormData) {
     setError(null);
@@ -414,6 +520,19 @@ export function FolioClient({
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to void charge.");
+      }
+    });
+  }
+
+  function handleRoomPriceAdjustment(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await adjustRoomPriceAction(fd);
+        setRoomPriceFormKey((k) => k + 1);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to adjust room price.");
       }
     });
   }
@@ -551,6 +670,15 @@ export function FolioClient({
           formKey={chargeFormKey}
           isPending={isPending}
           onSubmit={handleCharge}
+        />
+
+        <AdjustRoomPriceForm
+          key={roomPriceFormKey}
+          bookingId={booking.id}
+          standardRoomPrice={accommodationTotal}
+          currentRoomPrice={currentRoomPrice}
+          isPending={isPending}
+          onSubmit={handleRoomPriceAdjustment}
         />
       </section>
 
