@@ -37,6 +37,8 @@ export type FolioPayment = {
   recorded_by: string | null;
   recorded_by_name: string | null;
   recorded_at: string; // ISO 8601 UTC
+  receipt_id: string | null;
+  receipt_number: string | null;
 };
 
 export type FolioData = {

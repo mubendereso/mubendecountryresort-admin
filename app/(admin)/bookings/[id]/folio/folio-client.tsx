@@ -221,7 +221,17 @@ function PaymentsList({ payments }: { payments: FolioPayment[] }) {
               {payment.reference ? ` · Ref: ${payment.reference}` : ""}
             </p>
           </div>
-          <p className="shrink-0 text-sm font-semibold text-green-700">{fmtUgx(payment.amount_ugx)}</p>
+          <div className="flex shrink-0 items-center gap-3">
+            <p className="text-sm font-semibold text-green-700">{fmtUgx(payment.amount_ugx)}</p>
+            {payment.receipt_id && (
+              <Link
+                href={`/bookings/${payment.booking_id}/receipts/${payment.receipt_id}`}
+                className="print:hidden rounded-xl border border-stoneWarm-200 px-3 py-1 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+              >
+                {payment.receipt_number ?? "Receipt"}
+              </Link>
+            )}
+          </div>
         </div>
       ))}
     </div>

@@ -64,7 +64,7 @@ export function AdminOperationsHeader({
     role === "staff" ? primaryNavigation : [...primaryNavigation, ...managementNavigation];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-stoneWarm-200/80 bg-[#f8f4ec]/90 shadow-[0_12px_35px_rgba(55,43,30,0.08)] backdrop-blur-xl">
+    <header className="print:hidden sticky top-0 z-50 border-b border-stoneWarm-200/80 bg-[#f8f4ec]/90 shadow-[0_12px_35px_rgba(55,43,30,0.08)] backdrop-blur-xl">
       <div className="mx-auto max-w-[1480px] px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-[76px] items-center justify-between gap-6 border-b border-stoneWarm-200/70">
           <Link href="/front-desk" className="group flex min-w-0 items-center gap-3">

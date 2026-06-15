@@ -36,9 +36,12 @@ export async function getFolioData(bookingId: string): Promise<FolioData> {
         fp.reference,
         fp.recorded_by::text,
         au.full_name AS recorded_by_name,
-        to_char(fp.recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS recorded_at
+        to_char(fp.recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS recorded_at,
+        pr.id::text AS receipt_id,
+        pr.receipt_number
       FROM folio_payments fp
       LEFT JOIN admin_users au ON au.id = fp.recorded_by
+      LEFT JOIN payment_receipts pr ON pr.payment_id = fp.id
       WHERE fp.booking_id = ${bookingId}::uuid
       ORDER BY fp.recorded_at
     `
