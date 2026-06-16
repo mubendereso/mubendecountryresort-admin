@@ -25,6 +25,7 @@ export type BookingFormGroup = {
   id: string;
   reference: string;
   groupName: string;
+  status?: "active" | "archived" | "closed";
 };
 
 function fmtUgx(n: number): string {
@@ -167,6 +168,12 @@ export function BookingForm({
             ({group.reference})
           </span>
           .
+        </div>
+      )}
+
+      {!isEdit && group?.status && group.status !== "active" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This group is {group.status}. You can still add a booking from this direct link, but it stays hidden from the normal group list.
         </div>
       )}
 

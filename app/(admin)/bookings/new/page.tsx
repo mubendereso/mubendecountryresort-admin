@@ -35,7 +35,8 @@ export default async function NewBookingPage({
           ? {
               id: group.id,
               reference: group.reference,
-              groupName: group.group_name
+              groupName: group.group_name,
+              status: group.status
             }
           : undefined
       }

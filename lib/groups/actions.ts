@@ -6,6 +6,7 @@ import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getBookingById } from "@/lib/bookings/data";
 import { getReservationGroupById } from "./data";
+import type { ReservationGroupStatus } from "./types";
 
 const MAX_GROUP_NAME_LENGTH = 160;
 const MAX_ORGANIZER_NAME_LENGTH = 120;
@@ -28,6 +29,10 @@ export type CreateReservationGroupBundleResult =
 
 export type UpdateReservationGroupResult =
   | { ok: true; groupId: string; reference: string }
+  | { ok: false; error: string };
+
+export type UpdateReservationGroupStatusResult =
+  | { ok: true; groupId: string; reference: string; status: ReservationGroupStatus }
   | { ok: false; error: string };
 
 function isUuid(value: string): boolean {
@@ -69,6 +74,10 @@ function validateGroupTextFields(input: {
 
 function normalizedText(value: FormDataEntryValue | null): string {
   return String(value ?? "").trim();
+}
+
+function isReservationGroupStatus(value: string): value is ReservationGroupStatus {
+  return value === "active" || value === "archived" || value === "closed";
 }
 
 type GroupBookingCard = {
@@ -160,6 +169,7 @@ export async function createReservationGroupAction(
     const rows = (await sql`
       INSERT INTO reservation_groups (
         reference,
+        status,
         group_name,
         organizer_name,
         organizer_email,
@@ -169,6 +179,7 @@ export async function createReservationGroupAction(
       )
       VALUES (
         ${reference},
+        'active',
         ${groupName},
         ${organizerName},
         ${organizerEmail},
@@ -293,6 +304,80 @@ export async function updateReservationGroupAction(
     console.error("update_reservation_group failed:", error);
     return { ok: false, error: "Group could not be updated. Please try again." };
   }
+}
+
+async function setReservationGroupStatus(
+  formData: FormData,
+  nextStatus: ReservationGroupStatus
+): Promise<UpdateReservationGroupStatusResult> {
+  const session = await requireApprovedAdminRole();
+
+  const groupId = normalizedText(formData.get("groupId"));
+  if (!groupId) return { ok: false, error: "Missing group reference." };
+  if (!isUuid(groupId)) return { ok: false, error: "Please select a valid group." };
+  if (!isReservationGroupStatus(nextStatus)) {
+    return { ok: false, error: "Please select a valid group status." };
+  }
+
+  const sql = getSql();
+  const beforeGroup = await getReservationGroupById(groupId);
+  if (!beforeGroup) return { ok: false, error: "Group not found." };
+
+  if (beforeGroup.status === nextStatus) {
+    return { ok: true, groupId, reference: beforeGroup.reference, status: nextStatus };
+  }
+
+  try {
+    const rows = (await sql`
+      UPDATE reservation_groups
+      SET status = ${nextStatus}
+      WHERE id = ${groupId}::uuid
+      RETURNING id::text, reference, status
+    `) as { id: string; reference: string; status: ReservationGroupStatus }[];
+
+    const group = rows[0];
+    if (!group) return { ok: false, error: "Group could not be updated. Please try again." };
+
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: `reservation_group.${nextStatus}`,
+      entityType: "reservation_group",
+      entityId: groupId,
+      summary: `${nextStatus === "archived" ? "Archived" : nextStatus === "closed" ? "Closed" : "Reactivated"} group ${beforeGroup.group_name}.`,
+      context: {
+        groupId,
+        reference: group.reference,
+        before: {
+          status: beforeGroup.status
+        },
+        after: {
+          status: nextStatus
+        }
+      }
+    });
+
+    revalidatePath("/groups");
+    revalidatePath(`/groups/${groupId}`);
+    revalidatePath("/front-desk");
+
+    return { ok: true, groupId, reference: group.reference, status: group.status };
+  } catch (error) {
+    console.error("set_reservation_group_status failed:", error);
+    return { ok: false, error: "Group status could not be updated. Please try again." };
+  }
+}
+
+export async function archiveReservationGroupAction(
+  formData: FormData
+): Promise<UpdateReservationGroupStatusResult> {
+  return setReservationGroupStatus(formData, "archived");
+}
+
+export async function closeReservationGroupAction(
+  formData: FormData
+): Promise<UpdateReservationGroupStatusResult> {
+  return setReservationGroupStatus(formData, "closed");
 }
 
 export async function createReservationGroupBundleAction(

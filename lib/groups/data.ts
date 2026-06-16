@@ -2,6 +2,7 @@ import "server-only";
 
 import { getSql } from "@/lib/db/client";
 import type { BookingRow } from "@/lib/bookings/data";
+import { getGroupRoomBlockSummary, listGroupRoomBlocks } from "./room-blocks";
 import type {
   ReservationGroupAuditEvent,
   ReservationGroupDetailData,
@@ -19,10 +20,17 @@ function normalizeGroupRow(row: ReservationGroupRow): ReservationGroupRow {
   return {
     ...row,
     booking_count: Number(row.booking_count),
+    historical_booking_count: Number(row.historical_booking_count),
+    inactive_booking_count: Number(row.inactive_booking_count),
     guest_count: Number(row.guest_count),
+    historical_guest_count: Number(row.historical_guest_count),
+    inactive_guest_count: Number(row.inactive_guest_count),
     total_charges_ugx: Number(row.total_charges_ugx),
     total_paid_ugx: Number(row.total_paid_ugx),
-    balance_due_ugx: Number(row.balance_due_ugx)
+    balance_due_ugx: Number(row.balance_due_ugx),
+    historical_total_charges_ugx: Number(row.historical_total_charges_ugx),
+    historical_total_paid_ugx: Number(row.historical_total_paid_ugx),
+    historical_balance_due_ugx: Number(row.historical_balance_due_ugx)
   };
 }
 
@@ -32,10 +40,18 @@ function titleFromAction(action: string): string {
       return "Group created";
     case "reservation_group.updated":
       return "Group updated";
+    case "reservation_group.archived":
+      return "Group archived";
+    case "reservation_group.closed":
+      return "Group closed";
     case "reservation_group.booking_attached":
       return "Booking attached";
     case "reservation_group.booking_detached":
       return "Booking detached";
+    case "reservation_group.room_block_created":
+      return "Room block created";
+    case "reservation_group.room_block_released":
+      return "Room block released";
     case "booking.group_attached":
       return "Booking attached to group";
     case "booking.group_detached":
@@ -58,19 +74,63 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
     SELECT
       rg.id::text,
       rg.reference,
+      rg.status,
       rg.group_name,
       rg.organizer_name,
       rg.organizer_email,
       rg.organizer_phone,
       rg.notes,
-      COUNT(b.id)::int AS booking_count,
-      COALESCE(SUM(b.guests_adults + b.guests_children), 0)::int AS guest_count,
+      COUNT(b.id) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded'))::int AS booking_count,
+      COUNT(b.id)::int AS historical_booking_count,
+      COUNT(b.id) FILTER (WHERE b.status IN ('cancelled', 'no_show', 'refunded'))::int AS inactive_booking_count,
+      COALESCE(
+        SUM(b.guests_adults + b.guests_children) FILTER (
+          WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')
+        ),
+        0
+      )::int AS guest_count,
+      COALESCE(SUM(b.guests_adults + b.guests_children), 0)::int AS historical_guest_count,
+      COALESCE(
+        SUM(b.guests_adults + b.guests_children) FILTER (
+          WHERE b.status IN ('cancelled', 'no_show', 'refunded')
+        ),
+        0
+      )::int AS inactive_guest_count,
       COALESCE(
         SUM(
-          COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+            ELSE 0
+          END
         ),
         0
       )::bigint AS total_charges_ugx,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(
+              payments.total_paid_ugx,
+              CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+            )
+            ELSE 0
+          END
+        ),
+        0
+      )::bigint AS total_paid_ugx,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+              - COALESCE(
+                payments.total_paid_ugx,
+                CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+              )
+            ELSE 0
+          END
+        ),
+        0
+      )::bigint AS balance_due_ugx,
+      COALESCE(SUM(COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)), 0)::bigint AS historical_total_charges_ugx,
       COALESCE(
         SUM(
           COALESCE(
@@ -79,7 +139,7 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
           )
         ),
         0
-      )::bigint AS total_paid_ugx,
+      )::bigint AS historical_total_paid_ugx,
       COALESCE(
         SUM(
           COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
@@ -89,9 +149,15 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
           )
         ),
         0
-      )::bigint AS balance_due_ugx,
-      MIN(b.check_in)::text AS first_check_in,
-      MAX(b.check_out)::text AS last_check_out,
+      )::bigint AS historical_balance_due_ugx,
+      COALESCE(
+        MIN(b.check_in) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')),
+        MIN(b.check_in)
+      )::text AS first_check_in,
+      COALESCE(
+        MAX(b.check_out) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')),
+        MAX(b.check_out)
+      )::text AS last_check_out,
       to_char(rg.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
       to_char(rg.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
     FROM reservation_groups rg
@@ -108,6 +174,7 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
       FROM folio_payments fp
       WHERE fp.booking_id = b.id
     ) payments ON true
+    WHERE rg.status <> 'archived'
     GROUP BY rg.id
     ORDER BY rg.created_at DESC, rg.group_name ASC
   `) as ReservationGroupRow[];
@@ -121,19 +188,63 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
     SELECT
       rg.id::text,
       rg.reference,
+      rg.status,
       rg.group_name,
       rg.organizer_name,
       rg.organizer_email,
       rg.organizer_phone,
       rg.notes,
-      COUNT(b.id)::int AS booking_count,
-      COALESCE(SUM(b.guests_adults + b.guests_children), 0)::int AS guest_count,
+      COUNT(b.id) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded'))::int AS booking_count,
+      COUNT(b.id)::int AS historical_booking_count,
+      COUNT(b.id) FILTER (WHERE b.status IN ('cancelled', 'no_show', 'refunded'))::int AS inactive_booking_count,
+      COALESCE(
+        SUM(b.guests_adults + b.guests_children) FILTER (
+          WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')
+        ),
+        0
+      )::int AS guest_count,
+      COALESCE(SUM(b.guests_adults + b.guests_children), 0)::int AS historical_guest_count,
+      COALESCE(
+        SUM(b.guests_adults + b.guests_children) FILTER (
+          WHERE b.status IN ('cancelled', 'no_show', 'refunded')
+        ),
+        0
+      )::int AS inactive_guest_count,
       COALESCE(
         SUM(
-          COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+            ELSE 0
+          END
         ),
         0
       )::bigint AS total_charges_ugx,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(
+              payments.total_paid_ugx,
+              CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+            )
+            ELSE 0
+          END
+        ),
+        0
+      )::bigint AS total_paid_ugx,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN b.status NOT IN ('cancelled', 'no_show', 'refunded') THEN COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
+              - COALESCE(
+                payments.total_paid_ugx,
+                CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+              )
+            ELSE 0
+          END
+        ),
+        0
+      )::bigint AS balance_due_ugx,
+      COALESCE(SUM(COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)), 0)::bigint AS historical_total_charges_ugx,
       COALESCE(
         SUM(
           COALESCE(
@@ -142,7 +253,7 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
           )
         ),
         0
-      )::bigint AS total_paid_ugx,
+      )::bigint AS historical_total_paid_ugx,
       COALESCE(
         SUM(
           COALESCE(charges.total_charges_ugx, b.quoted_total_ugx)
@@ -152,9 +263,15 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
           )
         ),
         0
-      )::bigint AS balance_due_ugx,
-      MIN(b.check_in)::text AS first_check_in,
-      MAX(b.check_out)::text AS last_check_out,
+      )::bigint AS historical_balance_due_ugx,
+      COALESCE(
+        MIN(b.check_in) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')),
+        MIN(b.check_in)
+      )::text AS first_check_in,
+      COALESCE(
+        MAX(b.check_out) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')),
+        MAX(b.check_out)
+      )::text AS last_check_out,
       to_char(rg.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
       to_char(rg.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
     FROM reservation_groups rg
@@ -229,7 +346,7 @@ export async function listReservationGroupBookings(groupId: string): Promise<Boo
       WHERE fp.booking_id = b.id
     ) payments ON true
     WHERE b.group_id = ${groupId}::uuid
-    ORDER BY b.check_in ASC, b.created_at ASC
+    ORDER BY (b.status IN ('cancelled', 'no_show', 'refunded')) ASC, b.check_in ASC, b.created_at ASC
   `) as BookingRow[];
 
   return rows.map((booking) => ({
@@ -339,8 +456,10 @@ export async function listReservationGroupAuditEvents(groupId: string): Promise<
 export async function getReservationGroupDetailData(
   groupId: string
 ): Promise<ReservationGroupDetailData | null> {
-  const [group, bookings, attachableBookings, auditEvents] = await Promise.all([
+  const [group, roomBlocks, roomBlockSummary, bookings, attachableBookings, auditEvents] = await Promise.all([
     getReservationGroupById(groupId),
+    listGroupRoomBlocks(groupId),
+    getGroupRoomBlockSummary(groupId),
     listReservationGroupBookings(groupId),
     listReservationGroupAttachableBookings(groupId),
     listReservationGroupAuditEvents(groupId)
@@ -350,6 +469,8 @@ export async function getReservationGroupDetailData(
 
   return {
     group,
+    roomBlocks,
+    roomBlockSummary,
     bookings,
     attachableBookings,
     auditEvents

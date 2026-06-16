@@ -39,8 +39,9 @@ export default async function AvailabilityPage({
       <header>
         <h1 className="text-3xl font-semibold">Availability</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-oliveMuted-600">
-          Check live room availability for a date window. Confirmed stays and unexpired payment
-          holds are counted; stale pending-payment holds fade out automatically.
+          Check live room availability for a date window. Confirmed stays, unexpired payment
+          holds, active group room blocks, and out-of-order units are counted together so the
+          sellable count stays operational.
         </p>
       </header>
 

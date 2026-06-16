@@ -6,6 +6,12 @@ function fmtUgx(value: number): string {
   return `UGX ${new Intl.NumberFormat("en-UG").format(value)}`;
 }
 
+function statusLabel(status: string): string {
+  if (status === "closed") return "Closed";
+  if (status === "archived") return "Archived";
+  return "Active";
+}
+
 function formatDate(
   value: string | null,
   timeZone: "UTC" | "Africa/Kampala" = "UTC"
@@ -71,15 +77,15 @@ export default async function GroupsPage() {
       <section className="overflow-hidden rounded-[24px] border border-stoneWarm-200/80 bg-[#fffdf8] shadow-[0_14px_34px_rgba(55,43,30,0.06)]">
         <div className="grid gap-4 divide-y divide-stoneWarm-200/70 p-5 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:p-6">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Groups</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Visible groups</p>
             <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{groups.length}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Bookings linked</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Active bookings</p>
             <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{totals.bookings}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Open balance</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Active balance</p>
             <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(totals.balance)}</p>
           </div>
         </div>
@@ -87,7 +93,7 @@ export default async function GroupsPage() {
 
       {groups.length === 0 ? (
         <div className="surface-card px-6 py-10 text-sm text-oliveMuted-600">
-          No reservation groups yet. Create one when a guest trip has more than one booking to manage together.
+          No active reservation groups yet. Create one when a guest trip has more than one booking to manage together.
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -100,9 +106,14 @@ export default async function GroupsPage() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze-500">
-                      {group.reference}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze-500">
+                        {group.reference}
+                      </p>
+                      <span className="rounded-full border border-stoneWarm-200 bg-stoneWarm-50 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
+                        {statusLabel(group.status)}
+                      </span>
+                    </div>
                     <h2 className="mt-1 truncate font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
                       {group.group_name}
                     </h2>
@@ -123,7 +134,7 @@ export default async function GroupsPage() {
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-[18px] border border-stoneWarm-200/70 bg-stoneWarm-100/45 p-4">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
-                      Bookings
+                      Active bookings
                     </p>
                     <p className="mt-2 text-2xl font-semibold text-[#2a241a]">{group.booking_count}</p>
                     <p className="mt-1 text-xs text-oliveMuted-500">{group.guest_count} guests</p>
@@ -146,7 +157,7 @@ export default async function GroupsPage() {
                 </div>
 
                 <p className="text-sm text-oliveMuted-600">
-                  Charges {fmtUgx(group.total_charges_ugx)} - Created {formatDate(group.created_at, "Africa/Kampala")}
+                  Active charges {fmtUgx(group.total_charges_ugx)} - Created {formatDate(group.created_at, "Africa/Kampala")}
                 </p>
                 </article>
               );

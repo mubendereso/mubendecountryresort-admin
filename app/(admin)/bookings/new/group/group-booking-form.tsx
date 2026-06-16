@@ -175,6 +175,8 @@ export function GroupBookingForm({
   );
 
   function updateGroupDates(nextCheckIn: string, nextCheckOut: string) {
+    // Group dates seed the default stay window for member bookings.
+    // Individual cards can still diverge, which is required for future room blocks.
     setCheckIn(nextCheckIn);
     setCheckOut(nextCheckOut);
     setCards((current) =>

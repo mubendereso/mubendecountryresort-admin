@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getReservationGroupDetailData } from "@/lib/groups/data";
-import { updateReservationGroupAction } from "@/lib/groups/actions";
+import { archiveReservationGroupAction, updateReservationGroupAction } from "@/lib/groups/actions";
 import { GroupMembershipManager } from "../group-membership-manager";
 
 function fmtUgx(value: number): string {
@@ -64,6 +64,12 @@ function ActivityCard({
   );
 }
 
+function statusLabel(status: string): string {
+  if (status === "closed") return "Closed";
+  if (status === "archived") return "Archived";
+  return "Active";
+}
+
 export default async function GroupDetailPage({
   params
 }: {
@@ -84,6 +90,12 @@ export default async function GroupDetailPage({
     if (!result.ok) throw new Error(result.error);
   }
 
+  async function archiveGroup(formData: FormData) {
+    "use server";
+    const result = await archiveReservationGroupAction(formData);
+    if (!result.ok) throw new Error(result.error);
+  }
+
   return (
     <section className="grid gap-7 lg:gap-9">
       <nav className="text-sm text-oliveMuted-500">
@@ -99,9 +111,14 @@ export default async function GroupDetailPage({
         <div className="pointer-events-none absolute -right-4 -top-10 h-44 w-44 rounded-full border border-oliveMuted-400/10" />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-bronze-500">
-              Reservation group
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-bronze-500">
+                Reservation group
+              </p>
+              <span className="rounded-full border border-stoneWarm-200 bg-stoneWarm-50 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
+                {statusLabel(group.status)}
+              </span>
+            </div>
             <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.035em] text-[#2a241a] sm:text-5xl">
               {group.group_name}
             </h1>
@@ -129,6 +146,17 @@ export default async function GroupDetailPage({
                 <span className="block text-sm font-semibold">Add booking to group</span>
               </span>
             </Link>
+            {group.status !== "archived" && (
+              <form action={archiveGroup}>
+                <input type="hidden" name="groupId" value={group.id} />
+                <button
+                  type="submit"
+                  className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-sm font-semibold text-oliveMuted-600 transition hover:bg-white"
+                >
+                  Archive group
+                </button>
+              </form>
+            )}
             <Link
               href="/groups"
               className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-sm font-semibold text-oliveMuted-600 transition hover:bg-white"
@@ -141,7 +169,7 @@ export default async function GroupDetailPage({
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Bookings</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Active bookings</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{group.booking_count}</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
@@ -155,6 +183,51 @@ export default async function GroupDetailPage({
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Balance due</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(balanceDue)}</p>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <div className="rounded-[28px] border border-stoneWarm-200/80 bg-[#fffdf8] p-5 shadow-[0_18px_45px_rgba(55,43,30,0.08)] sm:p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">
+            Historical totals
+          </p>
+          <h2 className="mt-1 font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
+            Cancelled and no-show bookings stay recorded
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-oliveMuted-600">
+            Active totals ignore cancelled, no-show, and refunded member bookings so the group record reflects the live operational stay.
+          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[20px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
+                Historical bookings
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-[#2a241a]">{group.historical_booking_count}</p>
+            </div>
+            <div className="rounded-[20px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
+                Historical charges
+              </p>
+              <p className="mt-2 text-xl font-semibold text-[#2a241a]">{fmtUgx(group.historical_total_charges_ugx)}</p>
+            </div>
+            <div className="rounded-[20px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
+                Historical balance
+              </p>
+              <p className="mt-2 text-xl font-semibold text-[#2a241a]">{fmtUgx(group.historical_balance_due_ugx)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-[28px] border border-stoneWarm-200/80 bg-[#fffdf8] p-5 text-sm text-oliveMuted-600 shadow-[0_18px_45px_rgba(55,43,30,0.08)] sm:p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">
+            Lifecycle note
+          </p>
+          <p className="mt-2 leading-6">
+            The group stay window is still just the umbrella default. Individual bookings keep their own dates, folios, receipts, room assignments, and housekeeping flow.
+          </p>
+          <p className="mt-3 leading-6">
+            Archived groups are hidden from the default list but remain accessible directly for review or recovery.
+          </p>
         </div>
       </section>
 
