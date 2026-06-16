@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { createReservationGroupBundleAction } from "@/lib/groups/actions";
@@ -100,6 +100,10 @@ function firstAvailableRoomSlug(
   );
 }
 
+function isDateValue(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export function GroupBookingForm({
   rooms,
   initialCheckIn,
@@ -110,6 +114,7 @@ export function GroupBookingForm({
   initialCheckOut: string;
 }) {
   const router = useRouter();
+  const today = todayISO();
   const [groupName, setGroupName] = useState("");
   const [organizerName, setOrganizerName] = useState("");
   const [organizerEmail, setOrganizerEmail] = useState("");
@@ -121,6 +126,9 @@ export function GroupBookingForm({
   const [depositAmount, setDepositAmount] = useState(0);
   const [depositMethod, setDepositMethod] = useState("cash");
   const [depositReference, setDepositReference] = useState("");
+  const [liveRoomsByCard, setLiveRoomsByCard] = useState<Record<string, GroupBookingRoomOption[]>>(
+    () => ({})
+  );
   const [cards, setCards] = useState<GroupRoomCard[]>(() => {
     const defaultRoomSlug = firstAvailableRoomSlug(rooms);
     return defaultRoomSlug ? [createCard(defaultRoomSlug, initialCheckIn, initialCheckOut)] : [];
@@ -135,6 +143,66 @@ export function GroupBookingForm({
     }
     return counts;
   }, [cards]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+
+    async function refreshRoomOptions() {
+      const entries = await Promise.all(
+        cards.map(async (card) => {
+          if (!isDateValue(card.checkIn) || !isDateValue(card.checkOut) || card.checkOut <= card.checkIn) {
+            return [card.id, null] as const;
+          }
+
+          try {
+            const search = new URLSearchParams({
+              checkIn: card.checkIn,
+              checkOut: card.checkOut
+            });
+            const response = await fetch(`/api/group-booking/room-options?${search.toString()}`, {
+              method: "GET",
+              credentials: "same-origin",
+              signal: controller.signal
+            });
+
+            if (!response.ok) {
+              return [card.id, null] as const;
+            }
+
+            const payload = (await response.json()) as { rooms?: GroupBookingRoomOption[] };
+            return [card.id, payload.rooms ?? null] as const;
+          } catch {
+            return [card.id, null] as const;
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setLiveRoomsByCard((current) => {
+        const next: Record<string, GroupBookingRoomOption[]> = {};
+        for (const [cardId, options] of entries) {
+          if (options) {
+            next[cardId] = options;
+          }
+        }
+        for (const card of cards) {
+          if (!next[card.id]) {
+            next[card.id] = current[card.id] ?? rooms;
+          }
+        }
+        return next;
+      });
+    }
+
+    refreshRoomOptions();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [cards, rooms]);
 
   const cardTotals = useMemo(
     () =>
@@ -157,6 +225,10 @@ export function GroupBookingForm({
     [cardTotals, discountShares]
   );
   const depositShares = useMemo(() => allocateAmount(depositValue, finalCardTotals), [depositValue, finalCardTotals]);
+  const hasUnavailableSelection = cards.some((card) => {
+    const roomOptions = liveRoomsByCard[card.id] ?? rooms;
+    return availableForCard(card, card.roomTypeSlug, roomOptions) <= 0;
+  });
 
   const cardPayload = useMemo(
     () =>
@@ -193,7 +265,9 @@ export function GroupBookingForm({
   }
 
   function addCard() {
-    const defaultRoomSlug = firstAvailableRoomSlug(rooms, selectedCounts);
+    const baseRooms =
+      liveRoomsByCard[cards.find((card) => card.inheritDates)?.id ?? cards[0]?.id ?? ""] ?? rooms;
+    const defaultRoomSlug = firstAvailableRoomSlug(baseRooms, selectedCounts);
     if (!defaultRoomSlug) return;
     setCards((current) => [...current, createCard(defaultRoomSlug, checkIn, checkOut)]);
   }
@@ -233,8 +307,8 @@ export function GroupBookingForm({
     );
   }
 
-  function availableForCard(card: GroupRoomCard, slug: string): number {
-    const room = rooms.find((roomType) => roomType.slug === slug);
+  function availableForCard(card: GroupRoomCard, slug: string, roomOptions: GroupBookingRoomOption[]): number {
+    const room = roomOptions.find((roomType) => roomType.slug === slug);
     if (!room) return 0;
     const selectedCount = selectedCounts.get(slug) ?? 0;
     return room.available_count - selectedCount + (card.roomTypeSlug === slug ? 1 : 0);
@@ -254,6 +328,11 @@ export function GroupBookingForm({
     }
     if (depositValue > finalGroupTotal) {
       setError("Deposit cannot exceed the final group total.");
+      return;
+    }
+
+    if (hasUnavailableSelection) {
+      setError("One or more room selections are unavailable for the selected dates.");
       return;
     }
 
@@ -444,6 +523,7 @@ export function GroupBookingForm({
                 id="checkIn"
                 type="date"
                 value={checkIn}
+                min={today}
                 onChange={(event) => {
                   const nextCheckIn = event.target.value;
                   const nextCheckOut = checkOut <= nextCheckIn ? addDays(nextCheckIn, 1) : checkOut;
@@ -495,15 +575,16 @@ export function GroupBookingForm({
               </h2>
             </div>
             <p className="text-sm text-oliveMuted-500">
-              Room type options are grayed out when the selected stay already uses the available inventory.
+              Room type options are grayed out when the selected stay is already occupied or sold out.
             </p>
           </div>
 
           <div className="grid gap-4">
             {cards.map((card, index) => {
-              const room = rooms.find((roomType) => roomType.slug === card.roomTypeSlug) ?? rooms[0];
+              const roomOptions = liveRoomsByCard[card.id] ?? rooms;
+              const room = roomOptions.find((roomType) => roomType.slug === card.roomTypeSlug) ?? roomOptions[0];
               const cardNights = Math.max(1, nightsBetween(card.checkIn, card.checkOut));
-              const roomAvailableCount = availableForCard(card, card.roomTypeSlug);
+              const roomAvailableCount = availableForCard(card, card.roomTypeSlug, roomOptions);
 
               return (
                 <article
@@ -547,8 +628,8 @@ export function GroupBookingForm({
                         className={FIELD_CLASS}
                         required
                       >
-                        {rooms.map((roomType) => {
-                          const available = availableForCard(card, roomType.slug);
+                        {roomOptions.map((roomType) => {
+                          const available = availableForCard(card, roomType.slug, roomOptions);
                           const selected = roomType.slug === card.roomTypeSlug;
                           return (
                             <option key={roomType.slug} value={roomType.slug} disabled={!selected && available <= 0}>
@@ -559,7 +640,7 @@ export function GroupBookingForm({
                         })}
                       </select>
                       <p className="text-[11px] text-oliveMuted-500">
-                        Availability is checked against the shared group dates. Custom room dates are re-checked when the bundle is saved.
+                        Availability follows the selected stay dates and grays out rooms already occupied or sold out for that window.
                       </p>
                     </div>
 
@@ -575,7 +656,9 @@ export function GroupBookingForm({
                             </span>
                             <span className="mx-2 text-oliveMuted-300">|</span>
                             <span>
-                              {roomAvailableCount > 0 ? `${roomAvailableCount} available now` : "Unavailable now"}
+                              {roomAvailableCount > 0
+                                ? `${roomAvailableCount} available for these dates`
+                                : "Unavailable for these dates"}
                             </span>
                             {discountAmount > 0 && (
                               <>
@@ -606,6 +689,7 @@ export function GroupBookingForm({
                         id={`checkIn-${card.id}`}
                         type="date"
                         value={card.checkIn}
+                        min={today}
                         onChange={(event) => updateCard(card.id, { checkIn: event.target.value, inheritDates: false })}
                         className={FIELD_CLASS}
                         required
@@ -822,7 +906,13 @@ export function GroupBookingForm({
             </Link>
             <button
               type="submit"
-              disabled={isPending || grandTotal <= 0 || discountAmount > grandTotal || depositValue > finalGroupTotal}
+              disabled={
+                isPending ||
+                grandTotal <= 0 ||
+                discountAmount > grandTotal ||
+                depositValue > finalGroupTotal ||
+                hasUnavailableSelection
+              }
               className="rounded-full bg-oliveMuted-600 px-5 py-2.5 text-sm font-semibold text-canvas-light shadow-[0_10px_24px_rgba(82,88,69,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-oliveMuted-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isPending ? "Creating group..." : "Create group booking"}

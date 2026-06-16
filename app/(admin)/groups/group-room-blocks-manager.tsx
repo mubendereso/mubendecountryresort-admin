@@ -37,6 +37,14 @@ function statusLabel(status: string): string {
   return "Active";
 }
 
+function todayISO(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function statusClasses(status: string): string {
   if (status === "released") {
     return "border-stoneWarm-200 bg-stoneWarm-100 text-oliveMuted-600";
@@ -164,6 +172,7 @@ export function GroupRoomBlocksManager({
   summary: ReservationGroupRoomBlockSummary;
 }) {
   const router = useRouter();
+  const today = todayISO();
   const [error, setError] = useState<string | null>(null);
   const [pendingCreate, setPendingCreate] = useState(false);
   const [pendingBlockId, setPendingBlockId] = useState<string | null>(null);
@@ -309,6 +318,7 @@ export function GroupRoomBlocksManager({
                   name="checkIn"
                   type="date"
                   defaultValue={groupStartDate ?? ""}
+                  min={today}
                   className={FIELD_CLASS}
                   disabled={groupStatus !== "active"}
                 />
@@ -322,6 +332,7 @@ export function GroupRoomBlocksManager({
                   name="checkOut"
                   type="date"
                   defaultValue={groupEndDate ?? ""}
+                  min={today}
                   className={FIELD_CLASS}
                   disabled={groupStatus !== "active"}
                 />
