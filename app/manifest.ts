@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "MCR Admin",
     description:
       "Property management for Mubende Country Resort - front desk, housekeeping, reservations, and guest records.",
-    start_url: "/dashboard",
+    start_url: "/login?next=%2Fdashboard",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
@@ -15,10 +15,22 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["business", "productivity"],
     icons: [
       {
-        src: "/icons/mcr-official-logo.png",
-        sizes: "2000x2000",
+        src: "/icons/mcr-icon-192.png",
+        sizes: "192x192",
         type: "image/png",
         purpose: "any"
+      },
+      {
+        src: "/icons/mcr-icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any"
+      },
+      {
+        src: "/icons/mcr-icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable"
       }
     ]
   };

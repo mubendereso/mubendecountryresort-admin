@@ -13,7 +13,7 @@
 //
 // Bump CACHE_VERSION to force clients to evict old caches on next activate.
 
-const CACHE_VERSION = "mcr-admin-v4";
+const CACHE_VERSION = "mcr-admin-v5";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -54,8 +54,7 @@ self.addEventListener("activate", (event) => {
 function isStaticAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
-    url.pathname.startsWith("/icons/") ||
-    url.pathname === "/manifest.webmanifest"
+    url.pathname.startsWith("/icons/")
   );
 }
 
