@@ -6,6 +6,7 @@ import {
 import { buildLoginRedirect } from "@/lib/auth/utils";
 import { AdminPushAutoEnrollment } from "@/components/pwa/admin-push-auto-enrollment";
 import { AdminOperationsHeader } from "@/components/admin-operations-header";
+import { OfflineSnapshotRefresher } from "@/components/offline-snapshot-refresher";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let session: Awaited<ReturnType<typeof requireApprovedAdminRole>>;
@@ -26,6 +27,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-canvas-light text-[#2a241a]">
+      <OfflineSnapshotRefresher />
       <AdminOperationsHeader email={session.email} role={session.role} />
       <main className="mx-auto max-w-[1480px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
         {children}

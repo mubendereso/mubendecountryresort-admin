@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { getLocalDb } from "@/lib/local-db/client";
 import { enqueueMutation, pushOutbox, sync } from "@/lib/sync/engine";
+import { updateRoomUnitHousekeepingAction } from "@/lib/housekeeping/actions";
 import type { HousekeepingData } from "@/lib/housekeeping/data";
 import {
   HOUSEKEEPING_STATUS_LABELS,
@@ -487,6 +488,32 @@ export function HousekeepingClient({ initialData }: { initialData: HousekeepingD
   function handleStatus(unit: RoomUnit, status: HousekeepingStatus, notes: string | null) {
     setError(null);
     setPendingId(unit.id);
+
+    const isOutOfOrderProtectedUpdate =
+      status === "out_of_order" || unit.housekeeping_status === "out_of_order";
+
+    if (isOutOfOrderProtectedUpdate && !navigator.onLine) {
+      setPendingId(null);
+      setError("Changing an out-of-order room affects availability and requires an internet connection.");
+      return;
+    }
+
+    if (isOutOfOrderProtectedUpdate) {
+      startTransition(async () => {
+        try {
+          const formData = new FormData();
+          formData.set("id", unit.id);
+          formData.set("status", status);
+          if (notes?.trim()) formData.set("notes", notes.trim());
+          await updateRoomUnitHousekeepingAction(formData);
+          router.refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to mark room out of order.");
+        }
+        setPendingId(null);
+      });
+      return;
+    }
 
     const previous = units;
     const updatedAt = new Date().toISOString();

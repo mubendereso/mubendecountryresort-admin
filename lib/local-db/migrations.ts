@@ -121,6 +121,90 @@ export const MIGRATIONS: Migration[] = [
       INSERT OR REPLACE INTO _meta(key, value)
       VALUES ('housekeeping_status_schema', 'inspection_pending');
     `
+  },
+  {
+    version: 6,
+    name: "offline_front_desk_snapshots",
+    up: `
+      -- Read-only operational snapshots. These tables are refreshed from
+      -- /api/sync/snapshots and are never used as inventory or accounting truth.
+      CREATE TABLE IF NOT EXISTS offline_snapshot_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS bookings_snapshot (
+        id TEXT PRIMARY KEY,
+        booking_reference TEXT NOT NULL,
+        guest_name TEXT NOT NULL,
+        guest_phone TEXT,
+        guest_email TEXT,
+        room_type_name TEXT NOT NULL,
+        room_unit_name TEXT,
+        check_in TEXT NOT NULL,
+        check_out TEXT NOT NULL,
+        status TEXT NOT NULL,
+        group_id TEXT,
+        group_name TEXT,
+        balance_due INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS bookings_snapshot_dates_idx
+        ON bookings_snapshot(check_in, check_out, status);
+      CREATE INDEX IF NOT EXISTS bookings_snapshot_search_idx
+        ON bookings_snapshot(booking_reference, guest_name);
+
+      CREATE TABLE IF NOT EXISTS room_types_snapshot (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        inventory_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS folios_snapshot (
+        booking_id TEXT PRIMARY KEY,
+        total_charges INTEGER NOT NULL DEFAULT 0,
+        total_paid INTEGER NOT NULL DEFAULT 0,
+        balance_due INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS payment_receipts_snapshot (
+        id TEXT PRIMARY KEY,
+        booking_id TEXT NOT NULL,
+        receipt_number TEXT NOT NULL,
+        amount INTEGER NOT NULL DEFAULT 0,
+        payment_method TEXT NOT NULL,
+        issued_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS payment_receipts_snapshot_booking_idx
+        ON payment_receipts_snapshot(booking_id, issued_at DESC);
+
+      CREATE TABLE IF NOT EXISTS reservation_groups_snapshot (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        check_in TEXT,
+        check_out TEXT,
+        member_booking_count INTEGER NOT NULL DEFAULT 0,
+        balance_due INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS room_units_snapshot (
+        id TEXT PRIMARY KEY,
+        room_name TEXT NOT NULL,
+        housekeeping_status TEXT NOT NULL,
+        room_type_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS room_units_snapshot_status_idx
+        ON room_units_snapshot(housekeeping_status, updated_at DESC);
+    `
   }
 ];
 

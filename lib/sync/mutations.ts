@@ -64,8 +64,7 @@ const roomUnitHousekeepingSchema = z.object({
     "cleaning",
     "inspection_pending",
     "clean",
-    "inspected",
-    "out_of_order"
+    "inspected"
   ]),
   notes: z.string().trim().max(600).nullable()
 });
@@ -100,8 +99,8 @@ export const MUTATIONS: Record<string, MutationDef> = {
       };
     }
   },
-  // Update a physical room's housekeeping status. Idempotent and
-  // offline-safe: no inventory lock or booking allocation involved.
+  // Update a physical room's low-risk housekeeping status. Out-of-order is
+  // excluded because it affects availability and must stay online-only.
   "room_unit.update_housekeeping": {
     minRole: "staff",
     run: async (raw, _ctx) => {
