@@ -53,6 +53,24 @@ const createRoomTypeSchema = roomTypeSchema.omit({
   slug: true
 });
 
+export type CreateRoomTypeState = {
+  status: "idle" | "success" | "error";
+  message: string | null;
+  createdSlug: string | null;
+};
+
+const initialCreateRoomTypeState: CreateRoomTypeState = {
+  status: "idle",
+  message: null,
+  createdSlug: null
+};
+
+function getUploadedFiles(formData: FormData, key: string): File[] {
+  return formData
+    .getAll(key)
+    .filter((value): value is File => value instanceof File && value.size > 0);
+}
+
 function optionalText(value: string | undefined) {
   return value ? value : null;
 }
@@ -152,7 +170,10 @@ export async function updateRoomTypeAction(formData: FormData) {
   redirect(`/rooms/${room.slug}?message=${encodeURIComponent("Room type updated.")}`);
 }
 
-export async function createRoomTypeAction(formData: FormData) {
+export async function createRoomTypeAction(
+  _prevState: CreateRoomTypeState,
+  formData: FormData
+): Promise<CreateRoomTypeState> {
   await requireContentManager();
 
   const parsed = createRoomTypeSchema.safeParse({
@@ -169,8 +190,21 @@ export async function createRoomTypeAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    const message = encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid room data.");
-    redirect(`/rooms/new?message=${message}`);
+    return {
+      ...initialCreateRoomTypeState,
+      status: "error",
+      message: parsed.error.issues[0]?.message ?? "Invalid room data."
+    };
+  }
+
+  const galleryFiles = getUploadedFiles(formData, "gallery_images");
+
+  if (galleryFiles.length > MAX_GALLERY_IMAGES) {
+    return {
+      ...initialCreateRoomTypeState,
+      status: "error",
+      message: `You can upload at most ${MAX_GALLERY_IMAGES} gallery images at a time.`
+    };
   }
 
   const room = parsed.data;
@@ -243,18 +277,49 @@ export async function createRoomTypeAction(formData: FormData) {
       FROM created
       CROSS JOIN LATERAL generate_series(1, created.inventory_count) AS generated(unit_number)
     )
-    SELECT slug
+    SELECT id, slug
     FROM created
-  `) as { slug: string }[];
+  `) as { id: string; slug: string }[];
 
   const created = createdRows[0];
   if (!created) {
-    redirect(`/rooms/new?message=${encodeURIComponent("Could not generate a unique room URL.")}`);
+    return {
+      ...initialCreateRoomTypeState,
+      status: "error",
+      message: "Could not generate a unique room URL."
+    };
   }
+
+  const result: CreateRoomTypeState = {
+    status: "success",
+    message: "Room type created.",
+    createdSlug: created.slug
+  };
 
   revalidatePath("/rooms");
   revalidatePath("/availability");
-  redirect(`/rooms/${created.slug}?message=${encodeURIComponent("Room type created. Add its photos below.")}`);
+
+  try {
+    for (const file of galleryFiles) {
+      const uploaded = await uploadImageFile(file, `rooms/${created.slug}/gallery`);
+      await sql`
+        update room_types
+        set gallery = array_append(coalesce(gallery, array[]::text[]), ${uploaded.url})
+        where id = ${created.id}
+      `;
+    }
+  } catch (error) {
+    return {
+      status: "error",
+      message:
+        error instanceof ImageUploadError
+          ? `Room was created, but photo upload failed: ${error.message}`
+          : "Room was created, but photo upload failed.",
+      createdSlug: created.slug
+    };
+  }
+
+  return result;
 }
 
 const roomLifecycleSchema = z.object({
