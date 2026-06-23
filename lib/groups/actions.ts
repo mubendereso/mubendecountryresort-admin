@@ -5,7 +5,7 @@ import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getBookingById } from "@/lib/bookings/data";
-import { getReservationGroupById } from "./data";
+import { getReservationGroupById, getReservationGroupSettlement } from "./data";
 import type { ReservationGroupStatus } from "./types";
 
 const MAX_GROUP_NAME_LENGTH = 160;
@@ -323,6 +323,16 @@ async function setReservationGroupStatus(
   const beforeGroup = await getReservationGroupById(groupId);
   if (!beforeGroup) return { ok: false, error: "Group not found." };
 
+  if (nextStatus === "closed") {
+    const settlement = await getReservationGroupSettlement(groupId);
+    if (!settlement.can_close) {
+      return {
+        ok: false,
+        error: `Group cannot be closed yet: ${settlement.blockers.join(" ")}`
+      };
+    }
+  }
+
   if (beforeGroup.status === nextStatus) {
     return { ok: true, groupId, reference: beforeGroup.reference, status: nextStatus };
   }
@@ -359,6 +369,8 @@ async function setReservationGroupStatus(
 
     revalidatePath("/groups");
     revalidatePath(`/groups/${groupId}`);
+    revalidatePath(`/groups/${groupId}/folio`);
+    revalidatePath(`/groups/${groupId}/statement`);
     revalidatePath("/front-desk");
 
     return { ok: true, groupId, reference: group.reference, status: group.status };
@@ -378,6 +390,12 @@ export async function closeReservationGroupAction(
   formData: FormData
 ): Promise<UpdateReservationGroupStatusResult> {
   return setReservationGroupStatus(formData, "closed");
+}
+
+export async function reactivateReservationGroupAction(
+  formData: FormData
+): Promise<UpdateReservationGroupStatusResult> {
+  return setReservationGroupStatus(formData, "active");
 }
 
 export async function createReservationGroupBundleAction(

@@ -41,6 +41,34 @@ export type ReservationGroupAuditEvent = {
   action: string;
 };
 
+export type ReservationGroupSettlementBooking = {
+  id: string;
+  reference: string;
+  guest_full_name: string;
+  status: string;
+  balance_due_ugx: number;
+};
+
+export type ReservationGroupSettlementReceiptGap = {
+  booking_id: string;
+  booking_reference: string;
+  missing_receipt_count: number;
+};
+
+export type ReservationGroupSettlement = {
+  total_bookings: number;
+  terminal_booking_count: number;
+  open_booking_count: number;
+  unsettled_booking_count: number;
+  balance_due_ugx: number;
+  missing_receipt_count: number;
+  can_close: boolean;
+  blockers: string[];
+  open_bookings: ReservationGroupSettlementBooking[];
+  unsettled_bookings: ReservationGroupSettlementBooking[];
+  receipt_gaps: ReservationGroupSettlementReceiptGap[];
+};
+
 export type ReservationGroupRoomBlockStatus = "active" | "released" | "expired" | "converted";
 
 export type ReservationGroupRoomBlockRow = {
@@ -94,4 +122,5 @@ export type ReservationGroupDetailData = {
   bookings: BookingRow[];
   attachableBookings: BookingRow[];
   auditEvents: ReservationGroupAuditEvent[];
+  settlement: ReservationGroupSettlement;
 };

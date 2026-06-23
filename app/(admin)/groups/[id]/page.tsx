@@ -2,7 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getReservationGroupDetailData } from "@/lib/groups/data";
-import { archiveReservationGroupAction, updateReservationGroupAction } from "@/lib/groups/actions";
+import {
+  archiveReservationGroupAction,
+  closeReservationGroupAction,
+  reactivateReservationGroupAction,
+  updateReservationGroupAction
+} from "@/lib/groups/actions";
 import { GroupMembershipManager } from "../group-membership-manager";
 
 function fmtUgx(value: number): string {
@@ -70,6 +75,26 @@ function statusLabel(status: string): string {
   return "Active";
 }
 
+function SettlementItem({
+  label,
+  ok,
+  detail
+}: {
+  label: string;
+  ok: boolean;
+  detail: string;
+}) {
+  return (
+    <div className={`rounded-[20px] border px-4 py-3 ${ok ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${ok ? "text-green-700" : "text-amber-800"}`}>
+        {ok ? "Ready" : "Blocked"}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-[#2a241a]">{label}</p>
+      <p className="mt-1 text-xs text-oliveMuted-600">{detail}</p>
+    </div>
+  );
+}
+
 export default async function GroupDetailPage({
   params
 }: {
@@ -93,6 +118,18 @@ export default async function GroupDetailPage({
   async function archiveGroup(formData: FormData) {
     "use server";
     const result = await archiveReservationGroupAction(formData);
+    if (!result.ok) throw new Error(result.error);
+  }
+
+  async function closeGroup(formData: FormData) {
+    "use server";
+    const result = await closeReservationGroupAction(formData);
+    if (!result.ok) throw new Error(result.error);
+  }
+
+  async function reactivateGroup(formData: FormData) {
+    "use server";
+    const result = await reactivateReservationGroupAction(formData);
     if (!result.ok) throw new Error(result.error);
   }
 
@@ -169,6 +206,17 @@ export default async function GroupDetailPage({
                 </button>
               </form>
             )}
+            {group.status !== "active" && (
+              <form action={reactivateGroup}>
+                <input type="hidden" name="groupId" value={group.id} />
+                <button
+                  type="submit"
+                  className="rounded-[18px] border border-green-200 bg-green-50 px-5 py-3 text-sm font-semibold text-green-700 transition hover:bg-green-100"
+                >
+                  Reactivate
+                </button>
+              </form>
+            )}
             <Link
               href="/groups"
               className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-sm font-semibold text-oliveMuted-600 transition hover:bg-white"
@@ -196,6 +244,110 @@ export default async function GroupDetailPage({
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Balance due</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(balanceDue)}</p>
         </div>
+      </section>
+
+      <section className="grid gap-4 rounded-[28px] border border-stoneWarm-200/80 bg-[#fffdf8] p-5 shadow-[0_18px_45px_rgba(55,43,30,0.08)] sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">
+              Settlement
+            </p>
+            <h2 className="mt-1 font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
+              Close readiness
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-oliveMuted-600">
+              A group can close only after every member booking has finished or been cancelled, every active folio is settled, and every payment has a receipt.
+            </p>
+          </div>
+          <form action={closeGroup}>
+            <input type="hidden" name="groupId" value={group.id} />
+            <button
+              type="submit"
+              disabled={!data.settlement.can_close || group.status === "closed"}
+              className="rounded-full bg-oliveMuted-600 px-5 py-2.5 text-sm font-semibold text-canvas-light shadow-[0_10px_24px_rgba(82,88,69,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-oliveMuted-500 disabled:cursor-not-allowed disabled:bg-stoneWarm-300 disabled:text-oliveMuted-500 disabled:shadow-none"
+            >
+              {group.status === "closed" ? "Group closed" : "Close group"}
+            </button>
+          </form>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <SettlementItem
+            label="Member bookings"
+            ok={data.settlement.open_booking_count === 0 && data.settlement.total_bookings > 0}
+            detail={`${data.settlement.terminal_booking_count} of ${data.settlement.total_bookings} complete or inactive.`}
+          />
+          <SettlementItem
+            label="Folio balances"
+            ok={data.settlement.unsettled_booking_count === 0}
+            detail={
+              data.settlement.unsettled_booking_count === 0
+                ? "No active member balances remain."
+                : `${data.settlement.unsettled_booking_count} open balance(s), ${fmtUgx(data.settlement.balance_due_ugx)} due.`
+            }
+          />
+          <SettlementItem
+            label="Receipts"
+            ok={data.settlement.missing_receipt_count === 0}
+            detail={
+              data.settlement.missing_receipt_count === 0
+                ? "Every recorded payment has a receipt."
+                : `${data.settlement.missing_receipt_count} payment receipt(s) missing.`
+            }
+          />
+        </div>
+
+        {!data.settlement.can_close && (
+          <div className="rounded-[22px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <p className="font-semibold">Close blockers</p>
+            <ul className="mt-2 grid gap-1">
+              {data.settlement.blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {(data.settlement.open_bookings.length > 0 || data.settlement.unsettled_bookings.length > 0 || data.settlement.receipt_gaps.length > 0) && (
+          <div className="grid gap-3 lg:grid-cols-3">
+            {data.settlement.open_bookings.length > 0 && (
+              <div className="rounded-[22px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Still active</p>
+                <div className="mt-3 grid gap-2 text-sm">
+                  {data.settlement.open_bookings.map((booking) => (
+                    <Link key={booking.id} href={`/bookings/${booking.id}`} className="font-semibold text-oliveMuted-700 hover:underline">
+                      {booking.reference} - {booking.status.replaceAll("_", " ")}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.settlement.unsettled_bookings.length > 0 && (
+              <div className="rounded-[22px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Open balances</p>
+                <div className="mt-3 grid gap-2 text-sm">
+                  {data.settlement.unsettled_bookings.map((booking) => (
+                    <Link key={booking.id} href={`/bookings/${booking.id}/folio`} className="font-semibold text-red-700 hover:underline">
+                      {booking.reference} - {fmtUgx(booking.balance_due_ugx)}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.settlement.receipt_gaps.length > 0 && (
+              <div className="rounded-[22px] border border-stoneWarm-200 bg-stoneWarm-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Missing receipts</p>
+                <div className="mt-3 grid gap-2 text-sm">
+                  {data.settlement.receipt_gaps.map((gap) => (
+                    <Link key={gap.booking_id} href={`/bookings/${gap.booking_id}/folio`} className="font-semibold text-amber-800 hover:underline">
+                      {gap.booking_reference} - {gap.missing_receipt_count}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">

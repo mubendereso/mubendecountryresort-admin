@@ -6,7 +6,8 @@ import { getGroupRoomBlockSummary, listGroupRoomBlocks } from "./room-blocks";
 import type {
   ReservationGroupAuditEvent,
   ReservationGroupDetailData,
-  ReservationGroupRow
+  ReservationGroupRow,
+  ReservationGroupSettlement
 } from "./types";
 
 function formatIsoDate(value: string | Date | null): string | null {
@@ -453,6 +454,87 @@ export async function listReservationGroupAuditEvents(groupId: string): Promise<
   }));
 }
 
+export async function getReservationGroupSettlement(
+  groupId: string,
+  bookings?: BookingRow[]
+): Promise<ReservationGroupSettlement> {
+  const groupBookings = bookings ?? (await listReservationGroupBookings(groupId));
+  const terminalStatuses = new Set(["checked_out", "cancelled", "no_show", "refunded"]);
+  const openBookings = groupBookings
+    .filter((booking) => !terminalStatuses.has(booking.status))
+    .map((booking) => ({
+      id: booking.id,
+      reference: booking.reference,
+      guest_full_name: booking.guest_full_name,
+      status: booking.status,
+      balance_due_ugx: Math.max(0, booking.total_charges_ugx - booking.total_paid_ugx)
+    }));
+  const unsettledBookings = groupBookings
+    .filter((booking) => !["cancelled", "no_show", "refunded"].includes(booking.status))
+    .map((booking) => ({
+      id: booking.id,
+      reference: booking.reference,
+      guest_full_name: booking.guest_full_name,
+      status: booking.status,
+      balance_due_ugx: Math.max(0, booking.total_charges_ugx - booking.total_paid_ugx)
+    }))
+    .filter((booking) => booking.balance_due_ugx > 0);
+
+  const sql = getSql();
+  const receiptGaps = (await sql`
+    SELECT
+      b.id::text AS booking_id,
+      b.reference AS booking_reference,
+      COUNT(fp.id)::int AS missing_receipt_count
+    FROM bookings b
+    JOIN folio_payments fp ON fp.booking_id = b.id
+    LEFT JOIN payment_receipts pr ON pr.payment_id = fp.id
+    WHERE b.group_id = ${groupId}::uuid
+      AND pr.id IS NULL
+    GROUP BY b.id, b.reference
+    ORDER BY b.reference ASC
+  `) as {
+    booking_id: string;
+    booking_reference: string;
+    missing_receipt_count: number;
+  }[];
+  const missingReceiptCount = receiptGaps.reduce(
+    (sum, gap) => sum + Number(gap.missing_receipt_count),
+    0
+  );
+
+  const blockers: string[] = [];
+  if (groupBookings.length === 0) {
+    blockers.push("No member bookings are attached to this group.");
+  }
+  if (openBookings.length > 0) {
+    blockers.push(`${openBookings.length} member booking${openBookings.length === 1 ? " is" : "s are"} still active.`);
+  }
+  if (unsettledBookings.length > 0) {
+    blockers.push(`${unsettledBookings.length} member folio${unsettledBookings.length === 1 ? " has" : "s have"} an unresolved balance.`);
+  }
+  if (missingReceiptCount > 0) {
+    blockers.push(`${missingReceiptCount} payment${missingReceiptCount === 1 ? " is" : "s are"} missing receipts.`);
+  }
+
+  return {
+    total_bookings: groupBookings.length,
+    terminal_booking_count: groupBookings.length - openBookings.length,
+    open_booking_count: openBookings.length,
+    unsettled_booking_count: unsettledBookings.length,
+    balance_due_ugx: unsettledBookings.reduce((sum, booking) => sum + booking.balance_due_ugx, 0),
+    missing_receipt_count: missingReceiptCount,
+    can_close: blockers.length === 0,
+    blockers,
+    open_bookings: openBookings,
+    unsettled_bookings: unsettledBookings,
+    receipt_gaps: receiptGaps.map((gap) => ({
+      ...gap,
+      missing_receipt_count: Number(gap.missing_receipt_count)
+    }))
+  };
+}
+
 export async function getReservationGroupDetailData(
   groupId: string
 ): Promise<ReservationGroupDetailData | null> {
@@ -466,6 +548,7 @@ export async function getReservationGroupDetailData(
   ]);
 
   if (!group) return null;
+  const settlement = await getReservationGroupSettlement(groupId, bookings);
 
   return {
     group,
@@ -473,6 +556,7 @@ export async function getReservationGroupDetailData(
     roomBlockSummary,
     bookings,
     attachableBookings,
-    auditEvents
+    auditEvents,
+    settlement
   };
 }
