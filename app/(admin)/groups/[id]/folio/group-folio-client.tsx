@@ -268,6 +268,14 @@ export function GroupFolioClient({
               {data.group.organizer_email ? ` - ${data.group.organizer_email}` : ""}
               {data.group.organizer_phone ? ` - ${data.group.organizer_phone}` : ""}
             </p>
+            {data.group.company_account_id && (
+              <p className="mt-2 text-sm font-semibold text-bronze-600">
+                Bill to{" "}
+                <Link href={`/companies/${data.group.company_account_id}`} className="hover:underline">
+                  {data.group.company_name ?? "company account"}
+                </Link>
+              </p>
+            )}
           </div>
           <div className="print:hidden flex flex-wrap gap-2">
             <Link

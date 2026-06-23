@@ -122,6 +122,11 @@ export default async function GroupsPage() {
                       {group.organizer_email ? ` - ${group.organizer_email}` : ""}
                       {group.organizer_phone ? ` - ${group.organizer_phone}` : ""}
                     </p>
+                    {group.company_account_id && (
+                      <p className="mt-2 text-sm font-semibold text-bronze-600">
+                        Bill to {group.company_name ?? "company account"}
+                      </p>
+                    )}
                   </div>
                   <Link
                     href={`/groups/${group.id}`}
@@ -159,6 +164,26 @@ export default async function GroupsPage() {
                 <p className="text-sm text-oliveMuted-600">
                   Active charges {fmtUgx(group.total_charges_ugx)} - Created {formatDate(group.created_at, "Africa/Kampala")}
                 </p>
+                {group.company_account_id && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-bronze-200 bg-bronze-50/40 px-4 py-3 text-sm">
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-bronze-600">
+                        Corporate billing
+                      </p>
+                      <p className="mt-1 font-semibold text-[#2a241a]">{group.company_name}</p>
+                      <p className="mt-1 text-xs text-oliveMuted-500">
+                        Terms {group.company_payment_terms_days ?? 0} days
+                        {group.company_contact_name ? ` - ${group.company_contact_name}` : ""}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/companies/${group.company_account_id}`}
+                      className="rounded-full border border-bronze-200 bg-white px-3 py-2 text-xs font-semibold text-bronze-700 transition hover:bg-bronze-50"
+                    >
+                      Company
+                    </Link>
+                  </div>
+                )}
                 </article>
               );
             })}

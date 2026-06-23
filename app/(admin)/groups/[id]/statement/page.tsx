@@ -141,12 +141,27 @@ export default async function GroupStatementPage({
         <div className="grid gap-8 py-8 sm:grid-cols-2">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-oliveMuted-500">
-              Prepared For
+              {data.group.company_account_id ? "Bill To" : "Prepared For"}
             </p>
-            <p className="mt-2 text-lg font-semibold">{data.group.group_name}</p>
-            <p className="mt-1 text-sm">{data.group.organizer_name ?? "Organizer not recorded"}</p>
-            {data.group.organizer_email && <p className="mt-1 text-sm">{data.group.organizer_email}</p>}
-            {data.group.organizer_phone && <p className="mt-1 text-sm">{data.group.organizer_phone}</p>}
+            <p className="mt-2 text-lg font-semibold">
+              {data.group.company_account_id ? data.group.company_name : data.group.group_name}
+            </p>
+            {data.group.company_account_id ? (
+              <>
+                <p className="mt-1 text-sm">{data.group.company_contact_name ?? data.group.organizer_name ?? "Contact not recorded"}</p>
+                {data.group.company_contact_email && <p className="mt-1 text-sm">{data.group.company_contact_email}</p>}
+                {data.group.company_contact_phone && <p className="mt-1 text-sm">{data.group.company_contact_phone}</p>}
+                <p className="mt-2 text-xs text-oliveMuted-500">
+                  Group: {data.group.group_name} - Terms {data.group.company_payment_terms_days ?? 0} days
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-sm">{data.group.organizer_name ?? "Organizer not recorded"}</p>
+                {data.group.organizer_email && <p className="mt-1 text-sm">{data.group.organizer_email}</p>}
+                {data.group.organizer_phone && <p className="mt-1 text-sm">{data.group.organizer_phone}</p>}
+              </>
+            )}
           </div>
           <div className="sm:text-right">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-oliveMuted-500">

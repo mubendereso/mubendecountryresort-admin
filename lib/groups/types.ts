@@ -11,6 +11,13 @@ export type ReservationGroupRow = {
   organizer_email: string | null;
   organizer_phone: string | null;
   notes: string | null;
+  company_account_id: string | null;
+  company_name: string | null;
+  company_contact_name: string | null;
+  company_contact_email: string | null;
+  company_contact_phone: string | null;
+  company_payment_terms_days: number | null;
+  company_credit_limit_ugx: number | null;
   booking_count: number;
   historical_booking_count: number;
   inactive_booking_count: number;

@@ -31,7 +31,11 @@ function normalizeGroupRow(row: ReservationGroupRow): ReservationGroupRow {
     balance_due_ugx: Number(row.balance_due_ugx),
     historical_total_charges_ugx: Number(row.historical_total_charges_ugx),
     historical_total_paid_ugx: Number(row.historical_total_paid_ugx),
-    historical_balance_due_ugx: Number(row.historical_balance_due_ugx)
+    historical_balance_due_ugx: Number(row.historical_balance_due_ugx),
+    company_payment_terms_days:
+      row.company_payment_terms_days === null ? null : Number(row.company_payment_terms_days),
+    company_credit_limit_ugx:
+      row.company_credit_limit_ugx === null ? null : Number(row.company_credit_limit_ugx)
   };
 }
 
@@ -49,6 +53,10 @@ function titleFromAction(action: string): string {
       return "Booking attached";
     case "reservation_group.booking_detached":
       return "Booking detached";
+    case "reservation_group.company_attached":
+      return "Company payer attached";
+    case "reservation_group.company_removed":
+      return "Company payer removed";
     case "reservation_group.room_block_created":
       return "Room block created";
     case "reservation_group.room_block_released":
@@ -81,6 +89,13 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
       rg.organizer_email,
       rg.organizer_phone,
       rg.notes,
+      rg.company_account_id::text,
+      ca.company_name,
+      ca.contact_name AS company_contact_name,
+      ca.contact_email AS company_contact_email,
+      ca.contact_phone AS company_contact_phone,
+      ca.payment_terms_days AS company_payment_terms_days,
+      ca.credit_limit_ugx AS company_credit_limit_ugx,
       COUNT(b.id) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded'))::int AS booking_count,
       COUNT(b.id)::int AS historical_booking_count,
       COUNT(b.id) FILTER (WHERE b.status IN ('cancelled', 'no_show', 'refunded'))::int AS inactive_booking_count,
@@ -162,6 +177,7 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
       to_char(rg.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
       to_char(rg.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
     FROM reservation_groups rg
+    LEFT JOIN company_accounts ca ON ca.id = rg.company_account_id
     LEFT JOIN bookings b ON b.group_id = rg.id
     LEFT JOIN LATERAL (
       SELECT sum(
@@ -176,7 +192,7 @@ export async function listReservationGroups(): Promise<ReservationGroupRow[]> {
       WHERE fp.booking_id = b.id
     ) payments ON true
     WHERE rg.status <> 'archived'
-    GROUP BY rg.id
+    GROUP BY rg.id, ca.id
     ORDER BY rg.created_at DESC, rg.group_name ASC
   `) as ReservationGroupRow[];
 
@@ -195,6 +211,13 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
       rg.organizer_email,
       rg.organizer_phone,
       rg.notes,
+      rg.company_account_id::text,
+      ca.company_name,
+      ca.contact_name AS company_contact_name,
+      ca.contact_email AS company_contact_email,
+      ca.contact_phone AS company_contact_phone,
+      ca.payment_terms_days AS company_payment_terms_days,
+      ca.credit_limit_ugx AS company_credit_limit_ugx,
       COUNT(b.id) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded'))::int AS booking_count,
       COUNT(b.id)::int AS historical_booking_count,
       COUNT(b.id) FILTER (WHERE b.status IN ('cancelled', 'no_show', 'refunded'))::int AS inactive_booking_count,
@@ -276,6 +299,7 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
       to_char(rg.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
       to_char(rg.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
     FROM reservation_groups rg
+    LEFT JOIN company_accounts ca ON ca.id = rg.company_account_id
     LEFT JOIN bookings b ON b.group_id = rg.id
     LEFT JOIN LATERAL (
       SELECT sum(
@@ -290,7 +314,7 @@ export async function getReservationGroupById(groupId: string): Promise<Reservat
       WHERE fp.booking_id = b.id
     ) payments ON true
     WHERE rg.id = ${groupId}::uuid
-    GROUP BY rg.id
+    GROUP BY rg.id, ca.id
     LIMIT 1
   `) as ReservationGroupRow[];
 

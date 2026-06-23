@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { listCompanySelectOptions } from "@/lib/companies/data";
+import { setGroupCompanyAccountAction } from "@/lib/companies/actions";
 import { getReservationGroupDetailData } from "@/lib/groups/data";
 import {
   archiveReservationGroupAction,
@@ -102,7 +104,10 @@ export default async function GroupDetailPage({
 }) {
   await requireApprovedAdminRole();
   const { id } = await params;
-  const data = await getReservationGroupDetailData(id);
+  const [data, companies] = await Promise.all([
+    getReservationGroupDetailData(id),
+    listCompanySelectOptions()
+  ]);
 
   if (!data) notFound();
 
@@ -130,6 +135,12 @@ export default async function GroupDetailPage({
   async function reactivateGroup(formData: FormData) {
     "use server";
     const result = await reactivateReservationGroupAction(formData);
+    if (!result.ok) throw new Error(result.error);
+  }
+
+  async function updateCompanyPayer(formData: FormData) {
+    "use server";
+    const result = await setGroupCompanyAccountAction(formData);
     if (!result.ok) throw new Error(result.error);
   }
 
@@ -167,6 +178,14 @@ export default async function GroupDetailPage({
               {group.organizer_email ? ` - ${group.organizer_email}` : ""}
               {group.organizer_phone ? ` - ${group.organizer_phone}` : ""}
             </p>
+            {group.company_account_id && (
+              <Link
+                href={`/companies/${group.company_account_id}`}
+                className="mt-3 inline-flex rounded-full border border-oliveMuted-200 bg-oliveMuted-50 px-3 py-1.5 text-xs font-semibold text-oliveMuted-700 transition hover:bg-oliveMuted-100"
+              >
+                Bill to {group.company_name}
+              </Link>
+            )}
           </div>
           <div className="flex flex-wrap gap-3">
             <Link
@@ -348,6 +367,51 @@ export default async function GroupDetailPage({
             )}
           </div>
         )}
+      </section>
+
+      <section className="grid gap-4 rounded-[28px] border border-stoneWarm-200/80 bg-[#fffdf8] p-5 shadow-[0_18px_45px_rgba(55,43,30,0.08)] sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">Billing party</p>
+            <h2 className="mt-1 font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
+              Company payer
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-oliveMuted-600">
+              Attach a company account when this group should appear under accounts receivable and print statements billed to the company.
+            </p>
+          </div>
+          {group.company_account_id && (
+            <Link
+              href={`/companies/${group.company_account_id}`}
+              className="rounded-full border border-stoneWarm-200 bg-white px-4 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+            >
+              Open company
+            </Link>
+          )}
+        </div>
+        <form action={updateCompanyPayer} className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <input type="hidden" name="groupId" value={group.id} />
+          <select
+            name="companyId"
+            defaultValue={group.company_account_id ?? ""}
+            className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-oliveMuted-400 focus:ring-2 focus:ring-oliveMuted-200"
+          >
+            <option value="">No company payer</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id} disabled={!company.is_active && company.id !== group.company_account_id}>
+                {company.company_name}
+                {company.contact_name ? ` - ${company.contact_name}` : ""}
+                {!company.is_active ? " (inactive)" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-2xl bg-oliveMuted-600 px-5 py-2.5 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
+          >
+            Save payer
+          </button>
+        </form>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
