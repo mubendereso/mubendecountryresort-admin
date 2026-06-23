@@ -42,6 +42,10 @@ function stayNights(booking: FrontDeskBooking): number {
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000));
 }
 
+function balanceDue(booking: FrontDeskBooking): number {
+  return Math.max(0, booking.total_charges_ugx - booking.total_paid_ugx);
+}
+
 function BedIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className={className}>
@@ -453,6 +457,8 @@ function BookingCard({
 }) {
   const nights = stayNights(booking);
   const isArrival = kind === "arrival";
+  const due = balanceDue(booking);
+  const hasUnresolvedBalance = due > 0;
 
   return (
     <article className="group relative overflow-hidden rounded-[24px] border border-stoneWarm-200/80 bg-[#fffdf8] shadow-[0_14px_34px_rgba(55,43,30,0.07)] transition-all duration-300 hover:-translate-y-1 hover:border-stoneWarm-300 hover:shadow-[0_20px_45px_rgba(55,43,30,0.12)]">
@@ -481,10 +487,31 @@ function BookingCard({
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">Stay value</p>
-            <p className="mt-1 text-sm font-semibold text-[#2a241a]">{formatUgx(booking.quoted_total_ugx)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">Folio status</p>
+            <p className={`mt-1 text-sm font-semibold ${hasUnresolvedBalance ? "text-red-700" : "text-green-700"}`}>
+              {hasUnresolvedBalance ? `${formatUgx(due)} due` : "Settled"}
+            </p>
           </div>
         </div>
+
+        {hasUnresolvedBalance && (
+          <div className={`rounded-[18px] border px-4 py-3 text-sm ${
+            isArrival
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold">
+                {isArrival ? "Open folio balance" : "Checkout balance due"}
+              </p>
+              <p className="font-semibold">{formatUgx(due)}</p>
+            </div>
+            <p className="mt-1 text-xs opacity-80">
+              Charges {formatUgx(booking.total_charges_ugx)} - paid {formatUgx(booking.total_paid_ugx)}.
+              {booking.group_id ? " This booking is part of a group." : ""}
+            </p>
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-3">
           <StayDetail icon={<BedIcon className="h-4 w-4" />} label="Room" value={booking.room_type_title} detail={`${nights} ${nights === 1 ? "night" : "nights"}`} />

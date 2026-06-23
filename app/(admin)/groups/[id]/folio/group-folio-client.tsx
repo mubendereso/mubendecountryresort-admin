@@ -270,6 +270,12 @@ export function GroupFolioClient({
             </p>
           </div>
           <div className="print:hidden flex flex-wrap gap-2">
+            <Link
+              href={`/groups/${data.group.id}/statement`}
+              className="rounded-2xl border border-stoneWarm-200 px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+            >
+              Statement
+            </Link>
             <button
               type="button"
               onClick={() => window.print()}

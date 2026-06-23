@@ -19,6 +19,8 @@ export type FrontDeskBooking = {
   guest_phone: string | null;
   special_requests: string | null;
   quoted_total_ugx: number;
+  total_charges_ugx: number;
+  total_paid_ugx: number;
   notes: string | null;
   status: BookingStatus;
   room_unit_id: string | null;
@@ -60,6 +62,11 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.guest_phone,
       b.special_requests,
       b.quoted_total_ugx,
+      COALESCE(charges.total_charges_ugx, b.quoted_total_ugx) AS total_charges_ugx,
+      COALESCE(
+        payments.total_paid_ugx,
+        CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+      ) AS total_paid_ugx,
       b.notes,
       b.status,
       b.room_unit_id::text,
@@ -68,6 +75,18 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     LEFT JOIN reservation_groups rg ON rg.id = b.group_id
+    LEFT JOIN LATERAL (
+      SELECT sum(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ) FILTER (WHERE fc.voided_at IS NULL) AS total_charges_ugx
+      FROM folio_charges fc
+      WHERE fc.booking_id = b.id
+    ) charges ON true
+    LEFT JOIN LATERAL (
+      SELECT sum(fp.amount_ugx) AS total_paid_ugx
+      FROM folio_payments fp
+      WHERE fp.booking_id = b.id
+    ) payments ON true
     WHERE b.check_in = ${today}::date
       AND b.status = 'confirmed'
     ORDER BY b.created_at ASC
@@ -89,6 +108,11 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
       b.guest_phone,
       b.special_requests,
       b.quoted_total_ugx,
+      COALESCE(charges.total_charges_ugx, b.quoted_total_ugx) AS total_charges_ugx,
+      COALESCE(
+        payments.total_paid_ugx,
+        CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END
+      ) AS total_paid_ugx,
       b.notes,
       b.status,
       b.room_unit_id::text,
@@ -97,6 +121,18 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     LEFT JOIN reservation_groups rg ON rg.id = b.group_id
+    LEFT JOIN LATERAL (
+      SELECT sum(
+        CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
+      ) FILTER (WHERE fc.voided_at IS NULL) AS total_charges_ugx
+      FROM folio_charges fc
+      WHERE fc.booking_id = b.id
+    ) charges ON true
+    LEFT JOIN LATERAL (
+      SELECT sum(fp.amount_ugx) AS total_paid_ugx
+      FROM folio_payments fp
+      WHERE fp.booking_id = b.id
+    ) payments ON true
     WHERE b.check_out = ${today}::date
       AND b.status = 'checked_in'
     ORDER BY b.created_at ASC
@@ -114,9 +150,18 @@ export async function getFrontDeskData(): Promise<FrontDeskData> {
 
   return {
     today,
-    arrivals,
-    departures,
+    arrivals: arrivals.map(normalizeFrontDeskBooking),
+    departures: departures.map(normalizeFrontDeskBooking),
     inHouseCount: in_house_count,
     totalUnits: total_units
+  };
+}
+
+function normalizeFrontDeskBooking(booking: FrontDeskBooking): FrontDeskBooking {
+  return {
+    ...booking,
+    quoted_total_ugx: Number(booking.quoted_total_ugx),
+    total_charges_ugx: Number(booking.total_charges_ugx),
+    total_paid_ugx: Number(booking.total_paid_ugx)
   };
 }

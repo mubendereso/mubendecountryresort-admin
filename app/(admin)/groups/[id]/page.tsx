@@ -139,6 +139,12 @@ export default async function GroupDetailPage({
               Group folio
             </Link>
             <Link
+              href={`/groups/${group.id}/statement`}
+              className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-sm font-semibold text-oliveMuted-600 transition hover:bg-white"
+            >
+              Statement
+            </Link>
+            <Link
               href={`/bookings/new?groupId=${group.id}`}
               className="group inline-flex min-h-[52px] w-fit items-center gap-3 rounded-[18px] bg-oliveMuted-600 px-5 py-3 text-canvas-light shadow-[0_14px_30px_rgba(82,88,69,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-oliveMuted-500"
             >
