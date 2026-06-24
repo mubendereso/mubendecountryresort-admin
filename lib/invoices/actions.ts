@@ -11,6 +11,7 @@ import { getFolioData } from "@/lib/folios/data";
 import type { FolioCharge, FolioPayment } from "@/lib/folios/types";
 import { getGroupFolioData } from "@/lib/groups/folio-data";
 import type { GroupFolioBooking } from "@/lib/groups/folio-types";
+import { getInvoiceDetail } from "./data";
 import type { InvoiceActionResult } from "./types";
 
 type DraftLine = {
@@ -20,6 +21,27 @@ type DraftLine = {
   unit_amount_ugx: number;
   amount_ugx: number;
   source_charge_id: string | null;
+};
+
+type RefreshedDraft = {
+  companyAccountId: string | null;
+  sourceReference: string;
+  sourceTitle: string;
+  billToName: string;
+  billToContact: string | null;
+  billToEmail: string | null;
+  billToPhone: string | null;
+  billToAddress: string | null;
+  taxId: string | null;
+  stayStart: string | null;
+  stayEnd: string | null;
+  paymentTermsDays: number;
+  totalChargesUgx: number;
+  totalPaidUgx: number;
+  balanceDueUgx: number;
+  note: string | null;
+  sourceSnapshot: Record<string, unknown>;
+  lines: DraftLine[];
 };
 
 function signedChargeAmount(charge: FolioCharge): number {
@@ -66,6 +88,101 @@ function groupLines(bookings: GroupFolioBooking[]): DraftLine[] {
   return lines;
 }
 
+async function buildBookingDraft(bookingId: string): Promise<RefreshedDraft | null> {
+  const [booking, folio] = await Promise.all([
+    getBookingById(bookingId),
+    getFolioData(bookingId)
+  ]);
+  if (!booking) return null;
+
+  const lines = linesFromCharges(folio.charges);
+  if (lines.length === 0) throw new Error("This folio has no active charges to invoice.");
+  const totalCharges = lines.reduce((sum, line) => sum + line.amount_ugx, 0);
+  const totalPaid = totalPayments(folio.payments);
+
+  return {
+    companyAccountId: null,
+    sourceReference: booking.reference,
+    sourceTitle: booking.room_type_title,
+    billToName: booking.guest_full_name,
+    billToContact: booking.guest_full_name,
+    billToEmail: booking.guest_email,
+    billToPhone: booking.guest_phone,
+    billToAddress: null,
+    taxId: null,
+    stayStart: booking.check_in,
+    stayEnd: booking.check_out,
+    paymentTermsDays: 0,
+    totalChargesUgx: totalCharges,
+    totalPaidUgx: totalPaid,
+    balanceDueUgx: Math.max(0, totalCharges - totalPaid),
+    note: "Resort invoice generated from booking folio. This is not an EFRIS fiscal invoice.",
+    sourceSnapshot: {
+      bookingReference: booking.reference,
+      status: booking.status,
+      roomType: booking.room_type_title,
+      payments: folio.payments.map((payment) => ({
+        id: payment.id,
+        amount_ugx: payment.amount_ugx,
+        method: payment.method,
+        reference: payment.reference,
+        receipt_number: payment.receipt_number
+      }))
+    },
+    lines
+  };
+}
+
+async function buildGroupDraft(groupId: string): Promise<RefreshedDraft | null> {
+  const data = await getGroupFolioData(groupId);
+  if (!data) return null;
+
+  const company = data.group.company_account_id
+    ? await getCompanyAccountById(data.group.company_account_id)
+    : null;
+  const lines = groupLines(data.bookings);
+  if (lines.length === 0) throw new Error("This folio has no active charges to invoice.");
+  const totalCharges = lines.reduce((sum, line) => sum + line.amount_ugx, 0);
+  const totalPaid = data.bookings.reduce((sum, booking) => sum + totalPayments(booking.payments), 0);
+
+  return {
+    companyAccountId: company?.id ?? null,
+    sourceReference: data.group.reference,
+    sourceTitle: data.group.group_name,
+    billToName: company?.company_name ?? data.group.group_name,
+    billToContact: company?.contact_name ?? data.group.organizer_name,
+    billToEmail: company?.contact_email ?? data.group.organizer_email,
+    billToPhone: company?.contact_phone ?? data.group.organizer_phone,
+    billToAddress: company?.billing_address ?? null,
+    taxId: company?.tax_id ?? null,
+    stayStart: data.group.first_check_in,
+    stayEnd: data.group.last_check_out,
+    paymentTermsDays: company?.payment_terms_days ?? 0,
+    totalChargesUgx: totalCharges,
+    totalPaidUgx: totalPaid,
+    balanceDueUgx: Math.max(0, totalCharges - totalPaid),
+    note: "Resort invoice generated from group folio. This is not an EFRIS fiscal invoice.",
+    sourceSnapshot: {
+      groupReference: data.group.reference,
+      groupName: data.group.group_name,
+      companyAccountId: company?.id ?? null,
+      memberBookings: data.bookings.map((booking) => ({
+        id: booking.id,
+        reference: booking.reference,
+        guest_full_name: booking.guest_full_name,
+        status: booking.status
+      })),
+      groupPayments: data.groupPayments.map((payment) => ({
+        id: payment.id,
+        amount_ugx: payment.amount_ugx,
+        method: payment.method,
+        reference: payment.reference
+      }))
+    },
+    lines
+  };
+}
+
 async function insertInvoice(input: {
   invoiceType: "booking" | "group";
   bookingId: string | null;
@@ -84,6 +201,7 @@ async function insertInvoice(input: {
   totalChargesUgx: number;
   totalPaidUgx: number;
   balanceDueUgx: number;
+  paymentTermsDays: number;
   note: string | null;
   sourceSnapshot: Record<string, unknown>;
   lines: DraftLine[];
@@ -111,6 +229,7 @@ async function insertInvoice(input: {
         tax_id,
         stay_start,
         stay_end,
+        payment_terms_days,
         total_charges_ugx,
         total_paid_ugx,
         balance_due_ugx,
@@ -133,6 +252,7 @@ async function insertInvoice(input: {
         ${input.taxId},
         ${input.stayStart}::date,
         ${input.stayEnd}::date,
+        ${input.paymentTermsDays},
         ${input.totalChargesUgx},
         ${input.totalPaidUgx},
         ${input.balanceDueUgx},
@@ -218,6 +338,7 @@ export async function createBookingInvoiceAction(formData: FormData): Promise<In
       totalChargesUgx: totalCharges,
       totalPaidUgx: totalPaid,
       balanceDueUgx: balanceDue,
+      paymentTermsDays: 0,
       note: "Resort invoice generated from booking folio. This is not an EFRIS fiscal invoice.",
       sourceSnapshot: {
         bookingReference: booking.reference,
@@ -289,6 +410,7 @@ export async function createGroupInvoiceAction(formData: FormData): Promise<Invo
       totalChargesUgx: totalCharges,
       totalPaidUgx: totalPaid,
       balanceDueUgx: balanceDue,
+      paymentTermsDays: company?.payment_terms_days ?? 0,
       note: "Resort invoice generated from group folio. This is not an EFRIS fiscal invoice.",
       sourceSnapshot: {
         groupReference: data.group.reference,
@@ -344,6 +466,7 @@ export async function issueInvoiceAction(formData: FormData): Promise<void> {
       status = 'issued',
       invoice_number = 'INV-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.invoice_number_seq')::text, 6, '0'),
       issued_at = now(),
+      due_date = (now() AT TIME ZONE 'Africa/Kampala')::date + payment_terms_days,
       issued_by = ${session.userId}::uuid
     WHERE id = ${invoiceId}::uuid
       AND status = 'draft'
@@ -378,6 +501,109 @@ export async function issueInvoiceAction(formData: FormData): Promise<void> {
   });
 
   revalidateInvoicePaths(invoice);
+  redirect(`/invoices/${invoiceId}`);
+}
+
+export async function refreshDraftInvoiceAction(formData: FormData): Promise<void> {
+  const session = await requireApprovedAdminRole();
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  if (!invoiceId) throw new Error("Missing invoice.");
+
+  const detail = await getInvoiceDetail(invoiceId);
+  if (!detail) throw new Error("Invoice not found.");
+  if (detail.invoice.status !== "draft") throw new Error("Only draft invoices can be refreshed.");
+
+  const refreshed =
+    detail.invoice.invoice_type === "booking" && detail.invoice.booking_id
+      ? await buildBookingDraft(detail.invoice.booking_id)
+      : detail.invoice.invoice_type === "group" && detail.invoice.group_id
+        ? await buildGroupDraft(detail.invoice.group_id)
+        : null;
+
+  if (!refreshed) throw new Error("Invoice source could not be refreshed.");
+
+  const sql = getSql();
+  await sql`
+    WITH updated_invoice AS (
+      UPDATE invoices
+      SET
+        company_account_id = ${refreshed.companyAccountId}::uuid,
+        source_reference = ${refreshed.sourceReference},
+        source_title = ${refreshed.sourceTitle},
+        bill_to_name = ${refreshed.billToName},
+        bill_to_contact = ${refreshed.billToContact},
+        bill_to_email = ${refreshed.billToEmail},
+        bill_to_phone = ${refreshed.billToPhone},
+        bill_to_address = ${refreshed.billToAddress},
+        tax_id = ${refreshed.taxId},
+        stay_start = ${refreshed.stayStart}::date,
+        stay_end = ${refreshed.stayEnd}::date,
+        payment_terms_days = ${refreshed.paymentTermsDays},
+        total_charges_ugx = ${refreshed.totalChargesUgx},
+        total_paid_ugx = ${refreshed.totalPaidUgx},
+        balance_due_ugx = ${refreshed.balanceDueUgx},
+        note = ${refreshed.note},
+        source_snapshot = ${JSON.stringify(refreshed.sourceSnapshot)}::jsonb
+      WHERE id = ${invoiceId}::uuid
+        AND status = 'draft'
+      RETURNING id
+    ),
+    removed_lines AS (
+      DELETE FROM invoice_lines
+      WHERE invoice_id = ${invoiceId}::uuid
+        AND EXISTS (SELECT 1 FROM updated_invoice)
+    )
+    INSERT INTO invoice_lines (
+      invoice_id,
+      line_order,
+      description,
+      category,
+      quantity,
+      unit_amount_ugx,
+      amount_ugx,
+      source_charge_id
+    )
+    SELECT
+      ui.id,
+      line.line_order,
+      line.description,
+      line.category,
+      1,
+      line.unit_amount_ugx,
+      line.amount_ugx,
+      line.source_charge_id::uuid
+    FROM updated_invoice ui
+    CROSS JOIN jsonb_to_recordset(${JSON.stringify(refreshed.lines)}::jsonb) AS line(
+      line_order integer,
+      description text,
+      category text,
+      unit_amount_ugx bigint,
+      amount_ugx bigint,
+      source_charge_id text
+    )
+  `;
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "invoice.draft_refreshed",
+    entityType: "invoice",
+    entityId: invoiceId,
+    summary: `Refreshed draft invoice for ${refreshed.sourceReference}.`,
+    context: {
+      invoiceId,
+      sourceReference: refreshed.sourceReference,
+      totalCharges: refreshed.totalChargesUgx,
+      totalPaid: refreshed.totalPaidUgx,
+      balanceDue: refreshed.balanceDueUgx
+    }
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
+  if (detail.invoice.booking_id) revalidatePath(`/bookings/${detail.invoice.booking_id}/folio`);
+  if (detail.invoice.group_id) revalidatePath(`/groups/${detail.invoice.group_id}/folio`);
+  if (refreshed.companyAccountId) revalidatePath(`/companies/${refreshed.companyAccountId}`);
   redirect(`/invoices/${invoiceId}`);
 }
 

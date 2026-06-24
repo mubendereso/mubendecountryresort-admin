@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getInvoiceDetail } from "@/lib/invoices/data";
-import { issueInvoiceAction, voidInvoiceAction } from "@/lib/invoices/actions";
+import { issueInvoiceAction, refreshDraftInvoiceAction, voidInvoiceAction } from "@/lib/invoices/actions";
 
 function fmtUgx(value: number): string {
   return new Intl.NumberFormat("en-UG").format(value) + " UGX";
@@ -34,6 +34,15 @@ function fmtDateTime(value: string | null): string {
 
 function statusLabel(status: string): string {
   if (status === "issued") return "Issued";
+  if (status === "voided") return "Voided";
+  return "Draft";
+}
+
+function paymentStatusLabel(status: string): string {
+  if (status === "part_paid") return "Part paid";
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  if (status === "unpaid") return "Unpaid";
   if (status === "voided") return "Voided";
   return "Draft";
 }
@@ -68,15 +77,26 @@ export default async function InvoiceDetailPage({
         </div>
         <div className="flex flex-wrap gap-2">
           {invoice.status === "draft" && (
-            <form action={issueInvoiceAction}>
-              <input type="hidden" name="invoiceId" value={invoice.id} />
-              <button
-                type="submit"
-                className="rounded-2xl bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
-              >
-                Issue Invoice
-              </button>
-            </form>
+            <>
+              <form action={refreshDraftInvoiceAction}>
+                <input type="hidden" name="invoiceId" value={invoice.id} />
+                <button
+                  type="submit"
+                  className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+                >
+                  Refresh Draft
+                </button>
+              </form>
+              <form action={issueInvoiceAction}>
+                <input type="hidden" name="invoiceId" value={invoice.id} />
+                <button
+                  type="submit"
+                  className="rounded-2xl bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
+                >
+                  Issue Invoice
+                </button>
+              </form>
+            </>
           )}
           <PrintButton />
         </div>
@@ -127,6 +147,9 @@ export default async function InvoiceDetailPage({
             <p className="mt-1 font-mono text-base font-semibold">{invoice.invoice_number ?? "Draft"}</p>
             <p className="mt-2 text-xs text-oliveMuted-500">{statusLabel(invoice.status)}</p>
             <p className="mt-1 text-xs text-oliveMuted-500">{fmtDateTime(invoice.issued_at ?? invoice.created_at)}</p>
+            {invoice.due_date && (
+              <p className="mt-1 text-xs text-oliveMuted-500">Due {fmtDate(invoice.due_date)}</p>
+            )}
           </div>
         </header>
 
@@ -188,12 +211,29 @@ export default async function InvoiceDetailPage({
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-oliveMuted-500">Payments Received</p>
-            <p className="mt-2 text-xl font-semibold text-green-700">{fmtUgx(invoice.total_paid_ugx)}</p>
+            <p className="mt-2 text-xl font-semibold text-green-700">{fmtUgx(invoice.current_paid_ugx)}</p>
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-oliveMuted-500">Balance Due</p>
-            <p className={`mt-2 text-xl font-semibold ${invoice.balance_due_ugx > 0 ? "text-red-600" : "text-green-700"}`}>
-              {fmtUgx(invoice.balance_due_ugx)}
+            <p className={`mt-2 text-xl font-semibold ${invoice.current_balance_due_ugx > 0 ? "text-red-600" : "text-green-700"}`}>
+              {fmtUgx(invoice.current_balance_due_ugx)}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 rounded-2xl border border-stoneWarm-200 px-5 py-4 text-sm sm:grid-cols-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Payment Status</p>
+            <p className="mt-1 font-semibold text-[#2a241a]">{paymentStatusLabel(invoice.payment_status)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Terms</p>
+            <p className="mt-1 font-semibold text-[#2a241a]">{invoice.payment_terms_days} days</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Aging</p>
+            <p className="mt-1 font-semibold text-[#2a241a]">
+              {invoice.payment_status === "overdue" ? `${invoice.days_overdue} days overdue` : invoice.aging_bucket.replace("_", "-")}
             </p>
           </div>
         </div>

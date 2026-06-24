@@ -18,23 +18,53 @@ function fmtDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
+function fmtDate(value: string | null): string {
+  if (!value) return "On issue";
+  return new Intl.DateTimeFormat("en-UG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(new Date(value));
+}
+
 function statusLabel(status: string): string {
   if (status === "issued") return "Issued";
   if (status === "voided") return "Voided";
   return "Draft";
 }
 
-export default async function InvoicesPage() {
-  await requireApprovedAdminRole();
-  const invoices = await listInvoices(150);
+function paymentStatusLabel(status: string): string {
+  if (status === "part_paid") return "Part paid";
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  if (status === "unpaid") return "Unpaid";
+  if (status === "voided") return "Voided";
+  return "Draft";
+}
 
-  const totals = invoices.reduce(
+export default async function InvoicesPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ bucket?: string; status?: string }>;
+}) {
+  await requireApprovedAdminRole();
+  const params = await searchParams;
+  const allInvoices = await listInvoices(150);
+  const invoices = allInvoices.filter((invoice) => {
+    if (params?.status && invoice.status !== params.status) return false;
+    if (params?.bucket && invoice.aging_bucket !== params.bucket) return false;
+    return true;
+  });
+
+  const totals = allInvoices.reduce(
     (sum, invoice) => ({
       draft: sum.draft + (invoice.status === "draft" ? 1 : 0),
       issued: sum.issued + (invoice.status === "issued" ? 1 : 0),
-      openBalance: sum.openBalance + (invoice.status !== "voided" ? invoice.balance_due_ugx : 0)
+      overdue: sum.overdue + (invoice.payment_status === "overdue" ? 1 : 0),
+      openBalance: sum.openBalance + (invoice.status !== "voided" ? invoice.current_balance_due_ugx : 0)
     }),
-    { draft: 0, issued: 0, openBalance: 0 }
+    { draft: 0, issued: 0, overdue: 0, openBalance: 0 }
   );
 
   return (
@@ -55,7 +85,7 @@ export default async function InvoicesPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-4">
         <div className="surface-card p-4">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Drafts</p>
           <p className="mt-2 text-2xl font-semibold text-[#2a241a]">{totals.draft}</p>
@@ -65,10 +95,35 @@ export default async function InvoicesPage() {
           <p className="mt-2 text-2xl font-semibold text-[#2a241a]">{totals.issued}</p>
         </div>
         <div className="surface-card p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Overdue</p>
+          <p className="mt-2 text-2xl font-semibold text-red-600">{totals.overdue}</p>
+        </div>
+        <div className="surface-card p-4">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Open invoice balance</p>
           <p className="mt-2 text-2xl font-semibold text-[#2a241a]">{fmtUgx(totals.openBalance)}</p>
         </div>
       </section>
+
+      <nav className="flex flex-wrap gap-2">
+        {[
+          { href: "/invoices", label: "All" },
+          { href: "/invoices?status=draft", label: "Drafts" },
+          { href: "/invoices?status=issued", label: "Issued" },
+          { href: "/invoices?bucket=current", label: "Current" },
+          { href: "/invoices?bucket=1_30", label: "1-30" },
+          { href: "/invoices?bucket=31_60", label: "31-60" },
+          { href: "/invoices?bucket=61_90", label: "61-90" },
+          { href: "/invoices?bucket=90_plus", label: "90+" }
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="rounded-full border border-stoneWarm-200 bg-white px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
 
       <section className="surface-card overflow-hidden p-0">
         {invoices.length === 0 ? (
@@ -96,10 +151,13 @@ export default async function InvoicesPage() {
                 <div className="text-sm text-oliveMuted-600">
                   <p>{invoice.invoice_type === "group" ? "Group invoice" : "Booking invoice"}</p>
                   <p className="mt-1 text-xs">Created {fmtDateTime(invoice.created_at)}</p>
+                  <p className="mt-1 text-xs">Due {fmtDate(invoice.due_date)}</p>
                 </div>
                 <div className="text-sm">
                   <p className="font-semibold text-[#2a241a]">{fmtUgx(invoice.total_charges_ugx)}</p>
-                  <p className="mt-1 text-xs text-oliveMuted-500">Balance {fmtUgx(invoice.balance_due_ugx)}</p>
+                  <p className="mt-1 text-xs text-oliveMuted-500">
+                    {paymentStatusLabel(invoice.payment_status)} - Balance {fmtUgx(invoice.current_balance_due_ugx)}
+                  </p>
                 </div>
                 <Link
                   href={`/invoices/${invoice.id}`}

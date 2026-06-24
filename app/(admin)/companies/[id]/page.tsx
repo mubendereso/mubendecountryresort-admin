@@ -37,6 +37,13 @@ export default async function CompanyDetailPage({
     company.credit_limit_ugx > 0
       ? Math.round((company.outstanding_balance_ugx / company.credit_limit_ugx) * 100)
       : 0;
+  const invoiceAr = invoices.reduce(
+    (sum, invoice) => ({
+      overdue: sum.overdue + (invoice.payment_status === "overdue" ? 1 : 0),
+      open: sum.open + (invoice.status !== "voided" ? invoice.current_balance_due_ugx : 0)
+    }),
+    { overdue: 0, open: 0 }
+  );
 
   return (
     <section className="grid gap-7 lg:gap-9">
@@ -79,20 +86,21 @@ export default async function CompanyDetailPage({
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Outstanding</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Group exposure</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(company.outstanding_balance_ugx)}</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Credit limit</p>
-          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(company.credit_limit_ugx)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Invoice AR</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(invoiceAr.open)}</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Credit used</p>
-          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{exposurePercent}%</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Overdue invoices</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-red-600">{invoiceAr.overdue}</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Payment terms</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{company.payment_terms_days} days</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">Credit used {exposurePercent}%</p>
         </div>
       </section>
 
@@ -187,7 +195,7 @@ export default async function CompanyDetailPage({
                     {invoice.invoice_number ?? "Draft invoice"}
                   </p>
                   <p className="mt-1 text-sm text-oliveMuted-500">
-                    {invoice.source_reference} - {invoice.status} - Balance {fmtUgx(invoice.balance_due_ugx)}
+                    {invoice.source_reference} - {invoice.payment_status.replace("_", " ")} - Balance {fmtUgx(invoice.current_balance_due_ugx)}
                   </p>
                 </div>
                 <Link

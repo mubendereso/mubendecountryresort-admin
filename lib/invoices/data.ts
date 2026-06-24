@@ -6,11 +6,49 @@ import type { InvoiceDetail, InvoiceLine, InvoiceRow } from "./types";
 export type { InvoiceDetail, InvoiceLine, InvoiceRow } from "./types";
 
 function normalizeInvoice(row: InvoiceRow): InvoiceRow {
+  const currentPaid = Number(row.current_paid_ugx);
+  const currentBalance = Math.max(0, Number(row.total_charges_ugx) - currentPaid);
+  const daysOverdue = Number(row.days_overdue);
+  const paymentStatus =
+    row.status === "draft"
+      ? "draft"
+      : row.status === "voided"
+        ? "voided"
+        : currentBalance <= 0
+          ? "paid"
+          : daysOverdue > 0
+            ? "overdue"
+            : currentPaid > 0
+              ? "part_paid"
+              : "unpaid";
+  const agingBucket =
+    row.status === "draft"
+      ? "draft"
+      : row.status === "voided"
+        ? "voided"
+        : currentBalance <= 0
+          ? "paid"
+          : daysOverdue <= 0
+            ? "current"
+            : daysOverdue <= 30
+              ? "1_30"
+              : daysOverdue <= 60
+                ? "31_60"
+                : daysOverdue <= 90
+                  ? "61_90"
+                  : "90_plus";
+
   return {
     ...row,
+    payment_terms_days: Number(row.payment_terms_days),
     total_charges_ugx: Number(row.total_charges_ugx),
     total_paid_ugx: Number(row.total_paid_ugx),
     balance_due_ugx: Number(row.balance_due_ugx),
+    current_paid_ugx: currentPaid,
+    current_balance_due_ugx: currentBalance,
+    payment_status: paymentStatus,
+    days_overdue: daysOverdue,
+    aging_bucket: agingBucket,
     source_snapshot:
       typeof row.source_snapshot === "string"
         ? JSON.parse(row.source_snapshot)
@@ -49,9 +87,14 @@ export async function listInvoices(limit = 100): Promise<InvoiceRow[]> {
       i.tax_id,
       i.stay_start::text,
       i.stay_end::text,
+      i.payment_terms_days,
+      i.due_date::text,
       i.total_charges_ugx,
       i.total_paid_ugx,
       i.balance_due_ugx,
+      COALESCE(live.current_paid_ugx, i.total_paid_ugx)::bigint AS current_paid_ugx,
+      GREATEST(0, i.total_charges_ugx - COALESCE(live.current_paid_ugx, i.total_paid_ugx))::bigint AS current_balance_due_ugx,
+      COALESCE(GREATEST(0, (CURRENT_DATE - i.due_date)), 0)::int AS days_overdue,
       i.note,
       i.source_snapshot,
       i.created_by::text,
@@ -66,6 +109,22 @@ export async function listInvoices(limit = 100): Promise<InvoiceRow[]> {
       to_char(i.voided_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS voided_at,
       i.void_reason
     FROM invoices i
+    LEFT JOIN LATERAL (
+      SELECT CASE
+        WHEN i.invoice_type = 'booking' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          WHERE fp.booking_id = i.booking_id
+        )
+        WHEN i.invoice_type = 'group' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          JOIN bookings b ON b.id = fp.booking_id
+          WHERE b.group_id = i.group_id
+        )
+        ELSE i.total_paid_ugx
+      END AS current_paid_ugx
+    ) live ON true
     LEFT JOIN admin_users created ON created.id = i.created_by
     LEFT JOIN admin_users issued ON issued.id = i.issued_by
     LEFT JOIN admin_users voided ON voided.id = i.voided_by
@@ -97,9 +156,14 @@ export async function listInvoicesForBooking(bookingId: string): Promise<Invoice
       i.tax_id,
       i.stay_start::text,
       i.stay_end::text,
+      i.payment_terms_days,
+      i.due_date::text,
       i.total_charges_ugx,
       i.total_paid_ugx,
       i.balance_due_ugx,
+      COALESCE(live.current_paid_ugx, i.total_paid_ugx)::bigint AS current_paid_ugx,
+      GREATEST(0, i.total_charges_ugx - COALESCE(live.current_paid_ugx, i.total_paid_ugx))::bigint AS current_balance_due_ugx,
+      COALESCE(GREATEST(0, (CURRENT_DATE - i.due_date)), 0)::int AS days_overdue,
       i.note,
       i.source_snapshot,
       i.created_by::text,
@@ -114,6 +178,22 @@ export async function listInvoicesForBooking(bookingId: string): Promise<Invoice
       to_char(i.voided_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS voided_at,
       i.void_reason
     FROM invoices i
+    LEFT JOIN LATERAL (
+      SELECT CASE
+        WHEN i.invoice_type = 'booking' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          WHERE fp.booking_id = i.booking_id
+        )
+        WHEN i.invoice_type = 'group' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          JOIN bookings b ON b.id = fp.booking_id
+          WHERE b.group_id = i.group_id
+        )
+        ELSE i.total_paid_ugx
+      END AS current_paid_ugx
+    ) live ON true
     LEFT JOIN admin_users created ON created.id = i.created_by
     LEFT JOIN admin_users issued ON issued.id = i.issued_by
     LEFT JOIN admin_users voided ON voided.id = i.voided_by
@@ -145,9 +225,14 @@ export async function listInvoicesForGroup(groupId: string): Promise<InvoiceRow[
       i.tax_id,
       i.stay_start::text,
       i.stay_end::text,
+      i.payment_terms_days,
+      i.due_date::text,
       i.total_charges_ugx,
       i.total_paid_ugx,
       i.balance_due_ugx,
+      COALESCE(live.current_paid_ugx, i.total_paid_ugx)::bigint AS current_paid_ugx,
+      GREATEST(0, i.total_charges_ugx - COALESCE(live.current_paid_ugx, i.total_paid_ugx))::bigint AS current_balance_due_ugx,
+      COALESCE(GREATEST(0, (CURRENT_DATE - i.due_date)), 0)::int AS days_overdue,
       i.note,
       i.source_snapshot,
       i.created_by::text,
@@ -162,6 +247,22 @@ export async function listInvoicesForGroup(groupId: string): Promise<InvoiceRow[
       to_char(i.voided_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS voided_at,
       i.void_reason
     FROM invoices i
+    LEFT JOIN LATERAL (
+      SELECT CASE
+        WHEN i.invoice_type = 'booking' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          WHERE fp.booking_id = i.booking_id
+        )
+        WHEN i.invoice_type = 'group' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          JOIN bookings b ON b.id = fp.booking_id
+          WHERE b.group_id = i.group_id
+        )
+        ELSE i.total_paid_ugx
+      END AS current_paid_ugx
+    ) live ON true
     LEFT JOIN admin_users created ON created.id = i.created_by
     LEFT JOIN admin_users issued ON issued.id = i.issued_by
     LEFT JOIN admin_users voided ON voided.id = i.voided_by
@@ -193,9 +294,14 @@ export async function listInvoicesForCompany(companyId: string): Promise<Invoice
       i.tax_id,
       i.stay_start::text,
       i.stay_end::text,
+      i.payment_terms_days,
+      i.due_date::text,
       i.total_charges_ugx,
       i.total_paid_ugx,
       i.balance_due_ugx,
+      COALESCE(live.current_paid_ugx, i.total_paid_ugx)::bigint AS current_paid_ugx,
+      GREATEST(0, i.total_charges_ugx - COALESCE(live.current_paid_ugx, i.total_paid_ugx))::bigint AS current_balance_due_ugx,
+      COALESCE(GREATEST(0, (CURRENT_DATE - i.due_date)), 0)::int AS days_overdue,
       i.note,
       i.source_snapshot,
       i.created_by::text,
@@ -210,6 +316,22 @@ export async function listInvoicesForCompany(companyId: string): Promise<Invoice
       to_char(i.voided_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS voided_at,
       i.void_reason
     FROM invoices i
+    LEFT JOIN LATERAL (
+      SELECT CASE
+        WHEN i.invoice_type = 'booking' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          WHERE fp.booking_id = i.booking_id
+        )
+        WHEN i.invoice_type = 'group' THEN (
+          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+          FROM folio_payments fp
+          JOIN bookings b ON b.id = fp.booking_id
+          WHERE b.group_id = i.group_id
+        )
+        ELSE i.total_paid_ugx
+      END AS current_paid_ugx
+    ) live ON true
     LEFT JOIN admin_users created ON created.id = i.created_by
     LEFT JOIN admin_users issued ON issued.id = i.issued_by
     LEFT JOIN admin_users voided ON voided.id = i.voided_by
@@ -242,9 +364,14 @@ export async function getInvoiceDetail(invoiceId: string): Promise<InvoiceDetail
         i.tax_id,
         i.stay_start::text,
         i.stay_end::text,
+        i.payment_terms_days,
+        i.due_date::text,
         i.total_charges_ugx,
         i.total_paid_ugx,
         i.balance_due_ugx,
+        COALESCE(live.current_paid_ugx, i.total_paid_ugx)::bigint AS current_paid_ugx,
+        GREATEST(0, i.total_charges_ugx - COALESCE(live.current_paid_ugx, i.total_paid_ugx))::bigint AS current_balance_due_ugx,
+        COALESCE(GREATEST(0, (CURRENT_DATE - i.due_date)), 0)::int AS days_overdue,
         i.note,
         i.source_snapshot,
         i.created_by::text,
@@ -259,6 +386,22 @@ export async function getInvoiceDetail(invoiceId: string): Promise<InvoiceDetail
         to_char(i.voided_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS voided_at,
         i.void_reason
       FROM invoices i
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          WHEN i.invoice_type = 'booking' THEN (
+            SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+            FROM folio_payments fp
+            WHERE fp.booking_id = i.booking_id
+          )
+          WHEN i.invoice_type = 'group' THEN (
+            SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+            FROM folio_payments fp
+            JOIN bookings b ON b.id = fp.booking_id
+            WHERE b.group_id = i.group_id
+          )
+          ELSE i.total_paid_ugx
+        END AS current_paid_ugx
+      ) live ON true
       LEFT JOIN admin_users created ON created.id = i.created_by
       LEFT JOIN admin_users issued ON issued.id = i.issued_by
       LEFT JOIN admin_users voided ON voided.id = i.voided_by

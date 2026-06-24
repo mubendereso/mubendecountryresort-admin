@@ -75,7 +75,7 @@ export default async function GroupFolioPage({
                     {invoice.invoice_number ?? "Draft invoice"}
                   </p>
                   <p className="mt-1 text-sm text-oliveMuted-500">
-                    {invoice.status} - Balance {fmtUgx(invoice.balance_due_ugx)}
+                    {invoice.payment_status.replace("_", " ")} - Balance {fmtUgx(invoice.current_balance_due_ugx)}
                   </p>
                 </div>
                 <Link

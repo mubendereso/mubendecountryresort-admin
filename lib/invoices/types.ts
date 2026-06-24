@@ -19,9 +19,16 @@ export type InvoiceRow = {
   tax_id: string | null;
   stay_start: string | null;
   stay_end: string | null;
+  payment_terms_days: number;
+  due_date: string | null;
   total_charges_ugx: number;
   total_paid_ugx: number;
   balance_due_ugx: number;
+  current_paid_ugx: number;
+  current_balance_due_ugx: number;
+  payment_status: "draft" | "voided" | "unpaid" | "part_paid" | "paid" | "overdue";
+  days_overdue: number;
+  aging_bucket: "draft" | "voided" | "paid" | "current" | "1_30" | "31_60" | "61_90" | "90_plus";
   note: string | null;
   source_snapshot: Record<string, unknown>;
   created_by: string | null;
