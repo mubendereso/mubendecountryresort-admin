@@ -24,6 +24,7 @@ const primaryNavigation = [
 ];
 
 const managementNavigation = [
+  { href: "/activity", label: "Activity" },
   { href: "/reports", label: "Reports" },
   { href: "/users", label: "Users" }
 ];

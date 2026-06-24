@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { listAuditEventsForEntity } from "@/lib/audit/data";
 import { getInvoiceDetail } from "@/lib/invoices/data";
 import { issueInvoiceAction, refreshDraftInvoiceAction, voidInvoiceAction } from "@/lib/invoices/actions";
 
@@ -47,6 +48,30 @@ function paymentStatusLabel(status: string): string {
   return "Draft";
 }
 
+function ActivityCard({
+  event
+}: {
+  event: {
+    title: string;
+    summary: string | null;
+    created_at: string;
+    actor_name: string | null;
+    actor_email: string | null;
+  };
+}) {
+  return (
+    <div className="grid gap-2 rounded-2xl border border-stoneWarm-200 bg-stoneWarm-50 px-4 py-3">
+      <p className="text-sm font-semibold text-[#2a241a]">{event.title}</p>
+      <p className="text-sm text-oliveMuted-600">{event.summary ?? "Activity recorded."}</p>
+      <div className="flex flex-wrap gap-3 text-[11px] text-oliveMuted-500">
+        <span>{fmtDateTime(event.created_at)}</span>
+        {event.actor_name && <span>By {event.actor_name}</span>}
+        {!event.actor_name && event.actor_email && <span>By {event.actor_email}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default async function InvoiceDetailPage({
   params
 }: {
@@ -54,7 +79,10 @@ export default async function InvoiceDetailPage({
 }) {
   const session = await requireApprovedAdminRole();
   const { id } = await params;
-  const detail = await getInvoiceDetail(id);
+  const [detail, auditEvents] = await Promise.all([
+    getInvoiceDetail(id),
+    listAuditEventsForEntity("invoice", id)
+  ]);
   if (!detail) notFound();
 
   const { invoice, lines } = detail;
@@ -239,6 +267,27 @@ export default async function InvoiceDetailPage({
         </div>
 
         {invoice.note && <p className="mt-6 text-sm text-oliveMuted-600">{invoice.note}</p>}
+
+        <section className="mt-8 grid gap-3 border-t border-stoneWarm-200 pt-6 print:hidden">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-oliveMuted-500">
+                Activity
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">Invoice history</h2>
+            </div>
+            <Link href={`/activity?entity=invoice`} className="text-xs font-semibold text-oliveMuted-600 hover:underline">
+              Open activity
+            </Link>
+          </div>
+          {auditEvents.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-stoneWarm-300 px-4 py-5 text-sm text-oliveMuted-600">
+              No invoice activity has been recorded yet.
+            </p>
+          ) : (
+            auditEvents.map((event) => <ActivityCard key={event.id} event={event} />)
+          )}
+        </section>
 
         <footer className="mt-8 grid gap-4 border-t border-stoneWarm-200 pt-6 text-xs text-oliveMuted-500 sm:grid-cols-2">
           <p>
