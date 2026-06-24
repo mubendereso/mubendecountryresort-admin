@@ -13,6 +13,7 @@ const primaryNavigation = [
   { href: "/bookings", label: "Bookings" },
   { href: "/groups", label: "Groups" },
   { href: "/companies", label: "Companies" },
+  { href: "/invoices", label: "Invoices" },
   { href: "/night-audit", label: "Night Audit" },
   { href: "/guests", label: "Guests" },
   { href: "/housekeeping", label: "Housekeeping" },

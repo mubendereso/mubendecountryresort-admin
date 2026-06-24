@@ -19,6 +19,11 @@ const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
 const OFFLINE_FALLBACK = "/offline";
 
+const IS_LOCAL_DEV =
+  self.location.hostname === "localhost" ||
+  self.location.hostname === "127.0.0.1" ||
+  self.location.hostname === "::1";
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
@@ -73,6 +78,8 @@ function isMutation(request) {
 }
 
 self.addEventListener("fetch", (event) => {
+  if (IS_LOCAL_DEV) return;
+
   const request = event.request;
   const url = new URL(request.url);
 

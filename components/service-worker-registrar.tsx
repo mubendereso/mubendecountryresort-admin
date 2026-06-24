@@ -18,10 +18,31 @@ export function ServiceWorkerRegistrar() {
       window.location.hostname === "127.0.0.1" ||
       window.location.hostname === "::1";
 
-    // Keep the PWA available on localhost for local verification, but avoid
-    // registering in other non-production environments where HMR-like flows
-    // may depend on a clean, un-cached page state.
-    if (process.env.NODE_ENV !== "production" && !isLocalhost) return;
+    if (process.env.NODE_ENV !== "production") {
+      // Dev chunks change under stable-looking URLs often enough that a
+      // service worker can hydrate stale client code against fresh server HTML.
+      // Clear any previously installed local worker/caches before leaving dev
+      // to the network and Turbopack.
+      if (isLocalhost) {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+          .catch(() => undefined);
+        if ("caches" in window) {
+          caches
+            .keys()
+            .then((keys) =>
+              Promise.all(
+                keys
+                  .filter((key) => key.startsWith("mcr-admin-"))
+                  .map((key) => caches.delete(key))
+              )
+            )
+            .catch(() => undefined);
+        }
+      }
+      return;
+    }
 
     const controller = new AbortController();
     let activeRegistration: ServiceWorkerRegistration | null = null;

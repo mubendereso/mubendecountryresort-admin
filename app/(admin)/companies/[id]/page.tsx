@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getCompanyAccountDetail } from "@/lib/companies/data";
+import { listInvoicesForCompany } from "@/lib/invoices/data";
 import { CompanyForm } from "../company-form";
 
 function fmtUgx(value: number): string {
@@ -25,7 +26,10 @@ export default async function CompanyDetailPage({
 }) {
   await requireApprovedAdminRole();
   const { id } = await params;
-  const data = await getCompanyAccountDetail(id);
+  const [data, invoices] = await Promise.all([
+    getCompanyAccountDetail(id),
+    listInvoicesForCompany(id)
+  ]);
   if (!data) notFound();
 
   const company = data.company;
@@ -152,6 +156,47 @@ export default async function CompanyDetailPage({
                   </div>
                 </div>
               </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4">
+        <div className="flex items-end justify-between gap-4 px-1">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">
+              Invoices
+            </p>
+            <h2 className="mt-1 font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
+              Billing documents
+            </h2>
+          </div>
+          <p className="text-sm text-oliveMuted-500">{invoices.length} invoice{invoices.length === 1 ? "" : "s"}</p>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div className="surface-card px-6 py-8 text-sm text-oliveMuted-600">
+            No invoices have been created for this company yet.
+          </div>
+        ) : (
+          <div className="surface-card divide-y divide-stoneWarm-200 p-0">
+            {invoices.map((invoice) => (
+              <div key={invoice.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="font-mono text-xs font-semibold text-oliveMuted-600">
+                    {invoice.invoice_number ?? "Draft invoice"}
+                  </p>
+                  <p className="mt-1 text-sm text-oliveMuted-500">
+                    {invoice.source_reference} - {invoice.status} - Balance {fmtUgx(invoice.balance_due_ugx)}
+                  </p>
+                </div>
+                <Link
+                  href={`/invoices/${invoice.id}`}
+                  className="rounded-full border border-stoneWarm-200 bg-white px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+                >
+                  Open invoice
+                </Link>
+              </div>
             ))}
           </div>
         )}
