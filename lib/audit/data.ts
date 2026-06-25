@@ -90,6 +90,8 @@ export function titleFromAuditAction(action: string): string {
       return "Company account created";
     case "company_account.updated":
       return "Company account updated";
+    case "company_account.payment_recorded":
+      return "Company payment recorded";
     case "housekeeping.updated":
       return "Housekeeping updated";
     case "night_audit.closed":

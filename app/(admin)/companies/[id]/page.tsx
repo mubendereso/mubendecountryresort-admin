@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
-import { getCompanyAccountDetail } from "@/lib/companies/data";
+import { getCompanyAccountDetail, listCompanyPayments } from "@/lib/companies/data";
 import { listInvoicesForCompany } from "@/lib/invoices/data";
 import { CompanyForm } from "../company-form";
+import { CompanyPaymentForm } from "../company-payment-form";
 
 function fmtUgx(value: number): string {
   return `UGX ${new Intl.NumberFormat("en-UG").format(value)}`;
@@ -19,16 +20,28 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-UG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Kampala"
+  }).format(new Date(value));
+}
+
 export default async function CompanyDetailPage({
   params
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
   const { id } = await params;
-  const [data, invoices] = await Promise.all([
+  const [data, invoices, payments] = await Promise.all([
     getCompanyAccountDetail(id),
-    listInvoicesForCompany(id)
+    listInvoicesForCompany(id),
+    listCompanyPayments(id)
   ]);
   if (!data) notFound();
 
@@ -116,6 +129,12 @@ export default async function CompanyDetailPage({
         <CompanyForm company={company} />
       </section>
 
+      <CompanyPaymentForm
+        companyId={company.id}
+        openInvoiceBalanceUgx={invoiceAr.open}
+        canRecord={session.role !== "staff"}
+      />
+
       <section className="grid gap-4">
         <div className="flex items-end justify-between gap-4 px-1">
           <div>
@@ -163,6 +182,77 @@ export default async function CompanyDetailPage({
                     <p className="mt-2 text-sm font-semibold text-[#2a241a]">{fmtUgx(Math.max(0, group.balance_due_ugx))}</p>
                   </div>
                 </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4">
+        <div className="flex items-end justify-between gap-4 px-1">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">
+              Payments
+            </p>
+            <h2 className="mt-1 font-serif text-2xl font-semibold tracking-[-0.02em] text-[#2a241a]">
+              Company receipts and allocations
+            </h2>
+          </div>
+          <p className="text-sm text-oliveMuted-500">{payments.length} payment{payments.length === 1 ? "" : "s"}</p>
+        </div>
+
+        {payments.length === 0 ? (
+          <div className="surface-card px-6 py-8 text-sm text-oliveMuted-600">
+            No company-level payments have been recorded yet.
+          </div>
+        ) : (
+          <div className="surface-card divide-y divide-stoneWarm-200 p-0">
+            {payments.map((payment) => (
+              <article key={payment.id} className="grid gap-3 px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#2a241a]">
+                      {fmtUgx(payment.amount_ugx)} via {payment.method.replaceAll("_", " ")}
+                    </p>
+                    <p className="mt-1 text-xs text-oliveMuted-500">
+                      {formatDateTime(payment.recorded_at)}
+                      {payment.recorded_by_name ? ` - ${payment.recorded_by_name}` : ""}
+                      {payment.reference ? ` - ${payment.reference}` : ""}
+                    </p>
+                    {payment.note && <p className="mt-2 text-sm text-oliveMuted-600">{payment.note}</p>}
+                  </div>
+                  <p className="rounded-full border border-stoneWarm-200 bg-stoneWarm-50 px-3 py-1.5 text-xs font-semibold text-oliveMuted-600">
+                    {payment.allocation_count} allocation{payment.allocation_count === 1 ? "" : "s"}
+                  </p>
+                </div>
+                {payment.allocations.length > 0 && (
+                  <div className="grid gap-2">
+                    {payment.allocations.map((allocation) => (
+                      <div
+                        key={allocation.id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-stoneWarm-200/70 bg-stoneWarm-100/40 px-4 py-3 text-sm"
+                      >
+                        <div>
+                          <p className="font-mono text-xs font-semibold text-oliveMuted-600">
+                            {allocation.invoice_number ?? "Invoice"} - {allocation.invoice_source_reference}
+                          </p>
+                          <p className="mt-1 text-xs text-oliveMuted-500">
+                            {allocation.group_reference} - {allocation.group_name}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="font-semibold text-[#2a241a]">{fmtUgx(allocation.amount_ugx)}</p>
+                          <Link
+                            href={`/invoices/${allocation.invoice_id}`}
+                            className="rounded-full border border-stoneWarm-200 bg-white px-3 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
+                          >
+                            Open invoice
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </article>
             ))}
           </div>

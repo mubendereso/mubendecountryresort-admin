@@ -26,6 +26,35 @@ export type CompanyAccountDetail = {
   groups: ReservationGroupRow[];
 };
 
+export type CompanyPaymentAllocation = {
+  id: string;
+  company_payment_id: string;
+  invoice_id: string;
+  invoice_number: string | null;
+  invoice_source_reference: string;
+  group_id: string;
+  group_reference: string;
+  group_name: string;
+  group_payment_id: string;
+  amount_ugx: number;
+  created_at: string;
+};
+
+export type CompanyPayment = {
+  id: string;
+  company_account_id: string;
+  amount_ugx: number;
+  method: string;
+  reference: string | null;
+  note: string | null;
+  recorded_by: string | null;
+  recorded_by_name: string | null;
+  recorded_at: string;
+  allocated_amount_ugx: number;
+  allocation_count: number;
+  allocations: CompanyPaymentAllocation[];
+};
+
 export type CompanySelectOption = {
   id: string;
   company_name: string;

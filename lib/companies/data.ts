@@ -1,10 +1,22 @@
 import "server-only";
 
 import { getSql } from "@/lib/db/client";
-import type { CompanyAccount, CompanyAccountDetail, CompanySelectOption } from "./types";
+import type {
+  CompanyAccount,
+  CompanyAccountDetail,
+  CompanyPayment,
+  CompanyPaymentAllocation,
+  CompanySelectOption
+} from "./types";
 import type { ReservationGroupRow } from "@/lib/groups/types";
 
-export type { CompanyAccount, CompanyAccountDetail, CompanySelectOption } from "./types";
+export type {
+  CompanyAccount,
+  CompanyAccountDetail,
+  CompanyPayment,
+  CompanyPaymentAllocation,
+  CompanySelectOption
+} from "./types";
 
 function normalizeCompany(row: CompanyAccount): CompanyAccount {
   return {
@@ -236,4 +248,71 @@ export async function getCompanyAccountDetail(companyId: string): Promise<Compan
 
   if (!company) return null;
   return { company, groups };
+}
+
+export async function listCompanyPayments(companyId: string): Promise<CompanyPayment[]> {
+  const sql = getSql();
+  const [paymentRows, allocationRows] = await Promise.all([
+    sql`
+      SELECT
+        cap.id::text,
+        cap.company_account_id::text,
+        cap.amount_ugx,
+        cap.method,
+        cap.reference,
+        cap.note,
+        cap.recorded_by::text,
+        au.full_name AS recorded_by_name,
+        to_char(cap.recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS recorded_at,
+        COALESCE(SUM(capa.amount_ugx), 0)::bigint AS allocated_amount_ugx,
+        COUNT(capa.id)::int AS allocation_count
+      FROM company_account_payments cap
+      LEFT JOIN admin_users au ON au.id = cap.recorded_by
+      LEFT JOIN company_account_payment_allocations capa ON capa.company_payment_id = cap.id
+      WHERE cap.company_account_id = ${companyId}::uuid
+      GROUP BY cap.id, au.full_name
+      ORDER BY cap.recorded_at DESC, cap.id DESC
+      LIMIT 50
+    `,
+    sql`
+      SELECT
+        capa.id::text,
+        capa.company_payment_id::text,
+        capa.invoice_id::text,
+        i.invoice_number,
+        i.source_reference AS invoice_source_reference,
+        capa.group_id::text,
+        rg.reference AS group_reference,
+        rg.group_name,
+        capa.group_payment_id::text,
+        capa.amount_ugx,
+        to_char(capa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+      FROM company_account_payment_allocations capa
+      JOIN company_account_payments cap ON cap.id = capa.company_payment_id
+      JOIN invoices i ON i.id = capa.invoice_id
+      JOIN reservation_groups rg ON rg.id = capa.group_id
+      WHERE cap.company_account_id = ${companyId}::uuid
+      ORDER BY capa.created_at DESC, capa.id DESC
+    `
+  ]);
+
+  const allocationsByPayment = new Map<string, CompanyPaymentAllocation[]>();
+  for (const allocation of allocationRows as CompanyPaymentAllocation[]) {
+    const normalized = {
+      ...allocation,
+      amount_ugx: Number(allocation.amount_ugx)
+    };
+    allocationsByPayment.set(normalized.company_payment_id, [
+      ...(allocationsByPayment.get(normalized.company_payment_id) ?? []),
+      normalized
+    ]);
+  }
+
+  return (paymentRows as CompanyPayment[]).map((payment) => ({
+    ...payment,
+    amount_ugx: Number(payment.amount_ugx),
+    allocated_amount_ugx: Number(payment.allocated_amount_ugx),
+    allocation_count: Number(payment.allocation_count),
+    allocations: allocationsByPayment.get(payment.id) ?? []
+  }));
 }
