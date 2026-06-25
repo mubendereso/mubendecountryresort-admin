@@ -37,6 +37,17 @@ export async function updateRoomUnitHousekeepingAction(formData: FormData): Prom
   }
 
   const sql = getSql();
+  const beforeRows = (await sql`
+    SELECT id::text, unit_name, housekeeping_status, notes
+    FROM room_units
+    WHERE id = ${id}::uuid
+    LIMIT 1
+  `) as { id: string; unit_name: string; housekeeping_status: HousekeepingStatus; notes: string | null }[];
+  const before = beforeRows[0];
+  if (!before) {
+    throw new Error("Room unit not found.");
+  }
+
   const rows = (await sql`
     UPDATE room_units
     SET housekeeping_status = ${status}, notes = ${notes}
@@ -58,7 +69,16 @@ export async function updateRoomUnitHousekeepingAction(formData: FormData): Prom
     context: {
       roomUnitId: id,
       unitName: rows[0].unit_name,
+      previousStatus: before.housekeeping_status,
       status,
+      before: {
+        housekeepingStatus: before.housekeeping_status,
+        notes: before.notes
+      },
+      after: {
+        housekeepingStatus: status,
+        notes
+      },
       notes
     }
   });

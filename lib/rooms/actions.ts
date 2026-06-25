@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
+import { recordAuditLog } from "@/lib/audit/log";
 import { textareaToList } from "@/lib/rooms/format";
 import { ImageUploadError, uploadImageFile } from "@/lib/storage/image-upload";
 import { deleteObject, keyFromPublicUrl } from "@/lib/storage/r2";
@@ -93,10 +94,12 @@ async function requireContentManager() {
   if (session.role === "staff") {
     throw new Error("Only admin and superadmin users can manage room types.");
   }
+
+  return session;
 }
 
 export async function updateRoomTypeAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = roomTypeSchema.safeParse({
     id: formData.get("id"),
@@ -120,6 +123,25 @@ export async function updateRoomTypeAction(formData: FormData) {
 
   const room = parsed.data;
   const sql = getSql();
+  const beforeRows = (await sql`
+    SELECT
+      id::text,
+      slug,
+      title,
+      description,
+      overview,
+      price_ugx,
+      cover_image_url,
+      details,
+      amenities,
+      dining_hours,
+      inventory_count,
+      is_published
+    FROM room_types
+    WHERE id = ${room.id}::uuid
+    LIMIT 1
+  `) as Record<string, unknown>[];
+  const before = beforeRows[0];
 
   await sql`
     WITH updated AS (
@@ -136,7 +158,7 @@ export async function updateRoomTypeAction(formData: FormData) {
         inventory_count = ${room.inventory_count},
         is_published = ${room.is_published}
       WHERE id = ${room.id}
-      RETURNING id, title, inventory_count
+      RETURNING id, slug, title, price_ugx, inventory_count, is_published
     ),
     unit_counts AS (
       SELECT
@@ -164,6 +186,45 @@ export async function updateRoomTypeAction(formData: FormData) {
     ON CONFLICT (room_type_id, unit_name) DO NOTHING
   `;
 
+  if (before) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.updated",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `Updated room type ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        before: {
+          title: before.title,
+          description: before.description,
+          overview: before.overview,
+          priceUgx: before.price_ugx,
+          coverImageUrl: before.cover_image_url,
+          details: before.details,
+          amenities: before.amenities,
+          diningHours: before.dining_hours,
+          inventoryCount: before.inventory_count,
+          isPublished: before.is_published
+        },
+        after: {
+          title: room.title,
+          description: optionalText(room.description),
+          overview: optionalText(room.overview),
+          priceUgx: room.price_ugx,
+          coverImageUrl: optionalText(room.cover_image_url),
+          details: room.details,
+          amenities: room.amenities,
+          diningHours: room.dining_hours,
+          inventoryCount: room.inventory_count,
+          isPublished: room.is_published
+        }
+      }
+    });
+  }
+
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${room.slug}`);
   revalidatePath("/availability");
@@ -174,7 +235,7 @@ export async function createRoomTypeAction(
   _prevState: CreateRoomTypeState,
   formData: FormData
 ): Promise<CreateRoomTypeState> {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = createRoomTypeSchema.safeParse({
     title: formData.get("title"),
@@ -299,6 +360,24 @@ export async function createRoomTypeAction(
   revalidatePath("/rooms");
   revalidatePath("/availability");
 
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "room_type.created",
+    entityType: "room_type",
+    entityId: created.id,
+    summary: `Created room type ${room.title}.`,
+    context: {
+      roomTypeId: created.id,
+      slug: created.slug,
+      title: room.title,
+      priceUgx: room.price_ugx,
+      inventoryCount: room.inventory_count,
+      isPublished: room.is_published,
+      galleryImageCount: galleryFiles.length
+    }
+  });
+
   try {
     for (const file of galleryFiles) {
       const uploaded = await uploadImageFile(file, `rooms/${created.slug}/gallery`);
@@ -328,7 +407,7 @@ const roomLifecycleSchema = z.object({
 });
 
 export async function setRoomPublicationAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = roomLifecycleSchema.safeParse({
     id: formData.get("id"),
@@ -338,13 +417,45 @@ export async function setRoomPublicationAction(formData: FormData) {
 
   const published = formData.get("published") === "true";
   const sql = getSql();
-  await sql`
+  const beforeRows = (await sql`
+    SELECT id::text, slug, title, is_published
+    FROM room_types
+    WHERE id = ${parsed.data.id}::uuid
+    LIMIT 1
+  `) as { id: string; slug: string; title: string; is_published: boolean }[];
+  const before = beforeRows[0];
+
+  const rows = (await sql`
     UPDATE room_types
     SET
       is_published = ${published},
       archived_at = CASE WHEN ${published} THEN NULL ELSE archived_at END
     WHERE id = ${parsed.data.id}
-  `;
+    RETURNING id::text, slug, title, is_published
+  `) as {
+    id: string;
+    slug: string;
+    title: string;
+    is_published: boolean;
+  }[];
+
+  const room = rows[0];
+  if (room && before && before.is_published !== room.is_published) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: published ? "room_type.published" : "room_type.unpublished",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `${published ? "Published" : "Unpublished"} room type ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        before: { isPublished: before.is_published },
+        after: { isPublished: room.is_published }
+      }
+    });
+  }
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${parsed.data.slug}`);
@@ -352,7 +463,7 @@ export async function setRoomPublicationAction(formData: FormData) {
 }
 
 export async function setRoomArchivedAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = roomLifecycleSchema.safeParse({
     id: formData.get("id"),
@@ -362,6 +473,14 @@ export async function setRoomArchivedAction(formData: FormData) {
 
   const archived = formData.get("archived") === "true";
   const sql = getSql();
+  const beforeRows = (await sql`
+    SELECT id::text, slug, title, archived_at IS NOT NULL AS is_archived, is_published
+    FROM room_types
+    WHERE id = ${parsed.data.id}::uuid
+    LIMIT 1
+  `) as { id: string; slug: string; title: string; is_archived: boolean; is_published: boolean }[];
+  const before = beforeRows[0];
+
   await sql`
     UPDATE room_types
     SET
@@ -370,13 +489,30 @@ export async function setRoomArchivedAction(formData: FormData) {
     WHERE id = ${parsed.data.id}
   `;
 
+  if (before && before.is_archived !== archived) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: archived ? "room_type.archived" : "room_type.restored",
+      entityType: "room_type",
+      entityId: before.id,
+      summary: `${archived ? "Archived" : "Restored"} room type ${before.title}.`,
+      context: {
+        roomTypeId: before.id,
+        slug: before.slug,
+        before: { isArchived: before.is_archived, isPublished: before.is_published },
+        after: { isArchived: archived, isPublished: archived ? false : before.is_published }
+      }
+    });
+  }
+
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${parsed.data.slug}`);
   revalidatePath("/availability");
 }
 
 export async function duplicateRoomTypeAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = roomLifecycleSchema.safeParse({
     id: formData.get("id"),
@@ -434,19 +570,35 @@ export async function duplicateRoomTypeAction(formData: FormData) {
       FROM duplicated
       CROSS JOIN LATERAL generate_series(1, duplicated.inventory_count) AS generated(unit_number)
     )
-    SELECT slug
+    SELECT id::text, slug, title
     FROM duplicated
-  `) as { slug: string }[];
+  `) as { id: string; slug: string; title: string }[];
 
   const duplicate = rows[0];
   if (!duplicate) throw new Error("Room type not found.");
+
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "room_type.duplicated",
+    entityType: "room_type",
+    entityId: duplicate.id,
+    summary: `Duplicated room type ${parsed.data.slug} as ${duplicate.slug}.`,
+    context: {
+      sourceRoomTypeId: parsed.data.id,
+      sourceSlug: parsed.data.slug,
+      duplicateRoomTypeId: duplicate.id,
+      duplicateSlug: duplicate.slug,
+      title: duplicate.title
+    }
+  });
 
   revalidatePath("/rooms");
   redirect(`/rooms/${duplicate.slug}?message=${encodeURIComponent("Room type duplicated as a draft.")}`);
 }
 
 export async function bulkUpdateRoomRatesAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const updates: { id: string; price_ugx: number }[] = [];
   for (const [key, value] of formData.entries()) {
@@ -469,6 +621,13 @@ export async function bulkUpdateRoomRatesAction(formData: FormData) {
   }
 
   const sql = getSql();
+  const beforeRates = (await sql`
+    SELECT id::text, title, price_ugx
+    FROM room_types
+    WHERE id = ANY(${updates.map((update) => update.id)}::uuid[])
+    ORDER BY title ASC
+  `) as { id: string; title: string; price_ugx: number }[];
+
   await sql`
     UPDATE room_types rt
     SET price_ugx = rates.price_ugx
@@ -476,6 +635,33 @@ export async function bulkUpdateRoomRatesAction(formData: FormData) {
       AS rates(id uuid, price_ugx bigint)
     WHERE rt.id = rates.id
   `;
+
+  const changedRates = beforeRates
+    .map((before) => {
+      const update = updates.find((item) => item.id === before.id);
+      if (!update || Number(before.price_ugx) === update.price_ugx) return null;
+      return {
+        roomTypeId: before.id,
+        title: before.title,
+        beforePriceUgx: Number(before.price_ugx),
+        afterPriceUgx: update.price_ugx
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  if (changedRates.length > 0) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.rates_updated",
+      entityType: "room_type",
+      entityId: changedRates[0].roomTypeId,
+      summary: `Updated ${changedRates.length} room rate${changedRates.length === 1 ? "" : "s"}.`,
+      context: {
+        changedRates
+      }
+    });
+  }
 
   revalidatePath("/rooms");
   revalidatePath("/availability");
@@ -528,7 +714,7 @@ const importedRoomSchema = z.object({
 });
 
 export async function importRoomTypesAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const input = String(formData.get("csv") ?? "").trim();
   const rows = parseCsvRows(input);
@@ -605,7 +791,7 @@ export async function importRoomTypesAction(formData: FormData) {
           + row_number() OVER (ORDER BY slug) * 10
       FROM imported
       ON CONFLICT (slug) DO NOTHING
-      RETURNING id, title, inventory_count
+      RETURNING id, slug, title, price_ugx, inventory_count, is_published
     ),
     units AS (
       INSERT INTO room_units (room_type_id, unit_name, housekeeping_status)
@@ -619,9 +805,36 @@ export async function importRoomTypesAction(formData: FormData) {
       FROM inserted
       CROSS JOIN LATERAL generate_series(1, inserted.inventory_count) AS generated(unit_number)
     )
-    SELECT id
+    SELECT id::text, title, slug, price_ugx, inventory_count, is_published
     FROM inserted
-  `) as { id: string }[];
+  `) as {
+    id: string;
+    title: string;
+    slug: string;
+    price_ugx: number;
+    inventory_count: number;
+    is_published: boolean;
+  }[];
+
+  for (const room of inserted) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.created",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `Imported room type ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        title: room.title,
+        priceUgx: Number(room.price_ugx),
+        inventoryCount: Number(room.inventory_count),
+        isPublished: room.is_published,
+        source: "csv_import"
+      }
+    });
+  }
 
   revalidatePath("/rooms");
   revalidatePath("/availability");
@@ -634,7 +847,7 @@ const uploadCoverSchema = z.object({
 });
 
 export async function uploadRoomCoverAction(formData: FormData) {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const parsed = uploadCoverSchema.safeParse({
     id: formData.get("id"),
@@ -662,7 +875,29 @@ export async function uploadRoomCoverAction(formData: FormData) {
   }
 
   const sql = getSql();
-  await sql`update room_types set cover_image_url = ${url} where id = ${id}`;
+  const rows = (await sql`
+    update room_types
+    set cover_image_url = ${url}
+    where id = ${id}
+    returning id::text, title, slug, cover_image_url
+  `) as { id: string; title: string; slug: string; cover_image_url: string | null }[];
+
+  const room = rows[0];
+  if (room) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.cover_updated",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `Updated cover image for ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        coverImageUrl: room.cover_image_url
+      }
+    });
+  }
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${slug}`);
@@ -673,7 +908,7 @@ export async function uploadRoomCoverAction(formData: FormData) {
 // the client (sequentially) so large multi-image selections don't exceed the
 // server action body limit. Throws on error; the client surfaces the message.
 export async function uploadRoomGalleryImageAction(formData: FormData): Promise<void> {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const id = formData.get("id");
   const slug = formData.get("slug");
@@ -702,7 +937,29 @@ export async function uploadRoomGalleryImageAction(formData: FormData): Promise<
     throw error instanceof ImageUploadError ? error : new Error("Image upload failed.");
   }
 
-  await sql`update room_types set gallery = array_append(gallery, ${url}) where id = ${id}`;
+  const updated = (await sql`
+    update room_types
+    set gallery = array_append(gallery, ${url})
+    where id = ${id}
+    returning id::text, title, slug
+  `) as { id: string; title: string; slug: string }[];
+
+  const room = updated[0];
+  if (room) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.gallery_image_added",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `Added gallery image to ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        imageUrl: url
+      }
+    });
+  }
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${slug}`);
@@ -711,7 +968,7 @@ export async function uploadRoomGalleryImageAction(formData: FormData): Promise<
 // Removes one image URL from a room's gallery and best-effort deletes the
 // underlying R2 object. Throws on error; the client surfaces the message.
 export async function removeRoomGalleryImageAction(formData: FormData): Promise<void> {
-  await requireContentManager();
+  const session = await requireContentManager();
 
   const id = formData.get("id");
   const slug = formData.get("slug");
@@ -724,7 +981,29 @@ export async function removeRoomGalleryImageAction(formData: FormData): Promise<
   }
 
   const sql = getSql();
-  await sql`update room_types set gallery = array_remove(gallery, ${url}) where id = ${id}`;
+  const updated = (await sql`
+    update room_types
+    set gallery = array_remove(gallery, ${url})
+    where id = ${id}
+    returning id::text, title, slug
+  `) as { id: string; title: string; slug: string }[];
+
+  const room = updated[0];
+  if (room) {
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: "room_type.gallery_image_removed",
+      entityType: "room_type",
+      entityId: room.id,
+      summary: `Removed gallery image from ${room.title}.`,
+      context: {
+        roomTypeId: room.id,
+        slug: room.slug,
+        imageUrl: url
+      }
+    });
+  }
 
   // Best-effort: delete the file from R2 if it belongs to our bucket.
   try {

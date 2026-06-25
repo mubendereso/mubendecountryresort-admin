@@ -20,6 +20,7 @@ export type AuditFilters = {
   action?: string;
   entityType?: string;
   actorId?: string;
+  query?: string;
   limit?: number;
 };
 
@@ -95,6 +96,34 @@ export function titleFromAuditAction(action: string): string {
       return "Night audit closed";
     case "night_audit.voided":
       return "Night audit voided";
+    case "room_type.created":
+      return "Room type created";
+    case "room_type.updated":
+      return "Room type updated";
+    case "room_type.published":
+      return "Room type published";
+    case "room_type.unpublished":
+      return "Room type unpublished";
+    case "room_type.archived":
+      return "Room type archived";
+    case "room_type.restored":
+      return "Room type restored";
+    case "room_type.duplicated":
+      return "Room type duplicated";
+    case "room_type.rates_updated":
+      return "Room rates updated";
+    case "room_type.cover_updated":
+      return "Room cover updated";
+    case "room_type.gallery_image_added":
+      return "Room image added";
+    case "room_type.gallery_image_removed":
+      return "Room image removed";
+    case "admin_user.role_changed":
+      return "User role changed";
+    case "admin_user.activated":
+      return "User activated";
+    case "admin_user.deactivated":
+      return "User deactivated";
     default:
       return action.replaceAll(".", " ").replaceAll("_", " ");
   }
@@ -114,6 +143,8 @@ function normalizeAuditEvent(row: AuditEvent): AuditEvent {
 export async function listAuditEvents(filters: AuditFilters = {}): Promise<AuditEvent[]> {
   const sql = getSql();
   const limit = Math.min(Math.max(filters.limit ?? 200, 1), 500);
+  const query = filters.query?.trim() || null;
+  const queryPattern = query ? `%${query}%` : null;
   const rows = (await sql`
     SELECT
       al.id::text,
@@ -131,6 +162,16 @@ export async function listAuditEvents(filters: AuditFilters = {}): Promise<Audit
     WHERE (${filters.action ?? null}::text IS NULL OR al.action = ${filters.action ?? null})
       AND (${filters.entityType ?? null}::text IS NULL OR al.entity_type = ${filters.entityType ?? null})
       AND (${filters.actorId ?? null}::uuid IS NULL OR al.actor_id = ${filters.actorId ?? null}::uuid)
+      AND (
+        ${queryPattern}::text IS NULL
+        OR al.summary ILIKE ${queryPattern}
+        OR al.action ILIKE ${queryPattern}
+        OR al.entity_type ILIKE ${queryPattern}
+        OR al.entity_id::text ILIKE ${queryPattern}
+        OR al.actor_email ILIKE ${queryPattern}
+        OR au.full_name ILIKE ${queryPattern}
+        OR al.context::text ILIKE ${queryPattern}
+      )
     ORDER BY al.created_at DESC
     LIMIT ${limit}
   `) as AuditEvent[];
