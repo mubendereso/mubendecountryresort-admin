@@ -362,22 +362,22 @@ function QuickShortcutsCard() {
       primary: true
     },
     {
-      href: "/bookings/new",
-      icon: <GuestIcon className="h-4 w-4" />,
-      title: "Walk-in guest",
-      subtitle: "Start a direct front desk stay."
+      href: "/night-audit",
+      icon: <CalendarIcon className="h-4 w-4" />,
+      title: "Night Audit",
+      subtitle: "Review the close-out workflow."
+    },
+    {
+      href: "/rooms",
+      icon: <BedIcon className="h-4 w-4" />,
+      title: "Rooms",
+      subtitle: "Manage room inventory and status."
     },
     {
       href: "/bookings",
       icon: <SearchIcon className="h-4 w-4" />,
       title: "Find booking",
       subtitle: "Search stays, filters, and history."
-    },
-    {
-      href: "/calendar",
-      icon: <CalendarIcon className="h-4 w-4" />,
-      title: "Availability calendar",
-      subtitle: "View live room supply visually."
     }
   ] as const;
 
