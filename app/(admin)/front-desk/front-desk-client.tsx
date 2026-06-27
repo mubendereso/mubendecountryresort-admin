@@ -374,10 +374,10 @@ function QuickShortcutsCard() {
       subtitle: "Search stays, filters, and history."
     },
     {
-      href: "/availability",
+      href: "/calendar",
       icon: <CalendarIcon className="h-4 w-4" />,
-      title: "Room availability",
-      subtitle: "Check live room supply."
+      title: "Availability calendar",
+      subtitle: "View live room supply visually."
     }
   ] as const;
 

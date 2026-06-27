@@ -205,10 +205,65 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS room_units_snapshot_status_idx
         ON room_units_snapshot(housekeeping_status, updated_at DESC);
     `
+  },
+  {
+    version: 7,
+    name: "maintenance_work_orders_v1",
+    up: `
+      CREATE TABLE IF NOT EXISTS maintenance_work_orders (
+        id TEXT PRIMARY KEY, work_order_number TEXT NOT NULL, room_unit_id TEXT, room_type_id TEXT,
+        reported_by TEXT, assigned_to TEXT, external_vendor_name TEXT, category TEXT NOT NULL,
+        priority TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL,
+        reported_at TEXT NOT NULL, scheduled_for TEXT, expected_return_at TEXT, started_at TEXT,
+        completed_at TEXT, estimated_cost_ugx INTEGER, actual_cost_ugx INTEGER,
+        resolution_notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS maintenance_work_orders_status_idx ON maintenance_work_orders(status, priority, reported_at DESC);
+      CREATE INDEX IF NOT EXISTS maintenance_work_orders_assignee_idx ON maintenance_work_orders(assigned_to, status);
+
+      CREATE TABLE IF NOT EXISTS maintenance_activity (
+        id TEXT PRIMARY KEY, work_order_id TEXT NOT NULL, actor TEXT, action TEXT NOT NULL,
+        previous_status TEXT, new_status TEXT, notes TEXT, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS maintenance_activity_order_idx ON maintenance_activity(work_order_id, created_at, id);
+
+      CREATE TABLE IF NOT EXISTS maintenance_photos (
+        id TEXT PRIMARY KEY, work_order_id TEXT NOT NULL, filename TEXT NOT NULL,
+        storage_path TEXT NOT NULL, uploaded_by TEXT, uploaded_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS maintenance_photos_order_idx ON maintenance_photos(work_order_id, uploaded_at, id);
+
+      CREATE TABLE IF NOT EXISTS maintenance_staff (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, role TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS maintenance_rooms (
+        id TEXT PRIMARY KEY, unit_name TEXT NOT NULL, room_type_id TEXT NOT NULL,
+        room_type_title TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+    `
+  },
+  {
+    version: 8,
+    name: "maintenance_rooms_repair",
+    up: `
+      -- Some development devices applied v7 before maintenance_rooms was
+      -- included. Keep this repair append-only so those databases converge.
+      CREATE TABLE IF NOT EXISTS maintenance_rooms (
+        id TEXT PRIMARY KEY,
+        unit_name TEXT NOT NULL,
+        room_type_id TEXT NOT NULL,
+        room_type_title TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS maintenance_rooms_type_idx
+        ON maintenance_rooms(room_type_id, unit_name);
+    `
   }
 ];
 
 // Tables the sync engine is allowed to write to when applying pulled changes.
 // Guards against a malformed change feed naming an arbitrary table (the table
 // name can't be parameterized in SQL, so it's interpolated — whitelist it).
-export const SYNCED_TABLES = new Set<string>(["contact_submissions", "room_units"]);
+export const SYNCED_TABLES = new Set<string>([
+  "contact_submissions", "room_units", "maintenance_work_orders", "maintenance_activity", "maintenance_photos"
+]);

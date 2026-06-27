@@ -109,7 +109,6 @@ export async function createGroupRoomBlockAction(
 
     revalidatePath("/groups");
     revalidatePath(`/groups/${validation.data.groupId}`);
-    revalidatePath("/availability");
     revalidatePath("/bookings/new");
     revalidatePath("/bookings/new/group");
     revalidatePath("/front-desk");
@@ -221,7 +220,6 @@ export async function releaseGroupRoomBlockAction(
 
     revalidatePath("/groups");
     revalidatePath(`/groups/${existing.group_id}`);
-    revalidatePath("/availability");
     revalidatePath("/bookings/new");
     revalidatePath("/bookings/new/group");
     revalidatePath("/front-desk");

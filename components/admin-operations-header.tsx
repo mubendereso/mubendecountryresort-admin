@@ -17,9 +17,9 @@ const primaryNavigation = [
   { href: "/night-audit", label: "Night Audit" },
   { href: "/guests", label: "Guests" },
   { href: "/housekeeping", label: "Housekeeping" },
+  { href: "/maintenance", label: "Maintenance" },
   { href: "/calendar", label: "Calendar" },
   { href: "/rooms", label: "Rooms" },
-  { href: "/availability", label: "Availability" },
   { href: "/inbox", label: "Inbox" }
 ];
 

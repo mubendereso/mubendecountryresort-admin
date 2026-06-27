@@ -94,6 +94,26 @@ export function titleFromAuditAction(action: string): string {
       return "Company payment recorded";
     case "housekeeping.updated":
       return "Housekeeping updated";
+    case "maintenance.created":
+      return "Maintenance work order created";
+    case "maintenance.edited":
+      return "Maintenance work order updated";
+    case "maintenance.assigned":
+      return "Maintenance work order assigned";
+    case "maintenance.status_in_progress":
+      return "Maintenance work started";
+    case "maintenance.status_waiting_parts":
+      return "Maintenance waiting for parts";
+    case "maintenance.status_on_hold":
+      return "Maintenance work paused";
+    case "maintenance.completed":
+      return "Maintenance work completed";
+    case "maintenance.cancelled":
+      return "Maintenance work cancelled";
+    case "maintenance.note_added":
+      return "Maintenance note added";
+    case "maintenance.photo_added":
+      return "Maintenance photo added";
     case "night_audit.closed":
       return "Night audit closed";
     case "night_audit.voided":

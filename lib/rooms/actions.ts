@@ -227,7 +227,6 @@ export async function updateRoomTypeAction(formData: FormData) {
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${room.slug}`);
-  revalidatePath("/availability");
   redirect(`/rooms/${room.slug}?message=${encodeURIComponent("Room type updated.")}`);
 }
 
@@ -358,7 +357,6 @@ export async function createRoomTypeAction(
   };
 
   revalidatePath("/rooms");
-  revalidatePath("/availability");
 
   await recordAuditLog({
     actorId: session.userId,
@@ -459,7 +457,6 @@ export async function setRoomPublicationAction(formData: FormData) {
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${parsed.data.slug}`);
-  revalidatePath("/availability");
 }
 
 export async function setRoomArchivedAction(formData: FormData) {
@@ -508,7 +505,6 @@ export async function setRoomArchivedAction(formData: FormData) {
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${parsed.data.slug}`);
-  revalidatePath("/availability");
 }
 
 export async function duplicateRoomTypeAction(formData: FormData) {
@@ -664,7 +660,6 @@ export async function bulkUpdateRoomRatesAction(formData: FormData) {
   }
 
   revalidatePath("/rooms");
-  revalidatePath("/availability");
   redirect(`/rooms?message=${encodeURIComponent("Room rates updated.")}`);
 }
 
@@ -837,7 +832,6 @@ export async function importRoomTypesAction(formData: FormData) {
   }
 
   revalidatePath("/rooms");
-  revalidatePath("/availability");
   redirect(`/rooms?message=${encodeURIComponent(`${inserted.length} room type${inserted.length === 1 ? "" : "s"} imported. Existing slugs were skipped.`)}`);
 }
 

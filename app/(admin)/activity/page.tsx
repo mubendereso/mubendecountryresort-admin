@@ -132,6 +132,7 @@ export default async function ActivityPage({
           { href: "/activity?entity=company_account", label: "Companies" },
           { href: "/activity?entity=room_type", label: "Rooms" },
           { href: "/activity?entity=room_unit", label: "Housekeeping" },
+          { href: "/activity?entity=maintenance_work_order", label: "Maintenance" },
           { href: "/activity?entity=admin_user", label: "Users" },
           { href: "/activity?entity=night_audit_close", label: "Night audit" }
         ].map((item) => (

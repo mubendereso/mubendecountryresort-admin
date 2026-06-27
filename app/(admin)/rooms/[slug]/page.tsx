@@ -88,10 +88,10 @@ export default async function EditRoomTypePage({
           <p className="mt-2 text-sm text-oliveMuted-600">{room.slug}</p>
         </div>
         <Link
-          href={`/availability?roomTypeId=${room.id}`}
+          href="/calendar"
           className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
         >
-          Check availability
+          View calendar
         </Link>
       </header>
 

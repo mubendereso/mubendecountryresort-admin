@@ -35,10 +35,11 @@ function newKey(): string {
  */
 export async function enqueueMutation(
   type: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  idempotencyKey?: string
 ): Promise<string> {
   const db = getLocalDb();
-  const key = newKey();
+  const key = idempotencyKey ?? newKey();
   await db.exec(
     "INSERT INTO _outbox (idempotency_key, mutation_type, payload) VALUES (?, ?, ?)",
     [key, type, JSON.stringify(payload)]
@@ -131,11 +132,19 @@ export async function pushOutbox(): Promise<{ pushed: number; failed: number }> 
   );
   if (pending.length === 0) return { pushed: 0, failed: 0 };
 
-  const mutations: QueuedMutation[] = pending.map((r) => ({
-    idempotencyKey: r.idempotency_key,
-    type: r.mutation_type,
-    payload: JSON.parse(r.payload) as Record<string, unknown>
-  }));
+  const mutations: QueuedMutation[] = [];
+  let estimatedBytes = 0;
+  for (const row of pending) {
+    const next = {
+      idempotencyKey: row.idempotency_key,
+      type: row.mutation_type,
+      payload: JSON.parse(row.payload) as Record<string, unknown>
+    };
+    const nextBytes = JSON.stringify(next).length;
+    if (mutations.length > 0 && estimatedBytes + nextBytes > 1_800_000) break;
+    mutations.push(next);
+    estimatedBytes += nextBytes;
+  }
 
   const data = await postJson<PushResponse>("/api/sync/push", {
     mutations

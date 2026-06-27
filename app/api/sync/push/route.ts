@@ -14,7 +14,7 @@ import {
 } from "@/lib/sync/mutations";
 import type { MutationResult, PushResponse, QueuedMutation } from "@/lib/sync/protocol";
 
-const MAX_PUSH_BODY_BYTES = 512 * 1024;
+const MAX_PUSH_BODY_BYTES = 2 * 1024 * 1024;
 
 const pushSchema = z.object({
   mutations: z
@@ -72,7 +72,7 @@ async function applyOne(
 
   // 4. Apply + record audit + record idempotency.
   try {
-    const { audit } = await def.run(mutation.payload, ctx);
+    const { audit } = await def.run(mutation.payload, { ...ctx, mutationId: key });
 
     await sql`
       insert into audit_log

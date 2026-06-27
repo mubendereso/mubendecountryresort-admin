@@ -47,12 +47,3 @@ export type GroupBookingRoomOption = {
   archived_at: string | null;
   sort_order: number;
 };
-
-export type AvailabilityBookingRow = {
-  reference: string;
-  check_in: string;
-  check_out: string;
-  guest_full_name: string;
-  status: string;
-  expires_at: string | null;
-};

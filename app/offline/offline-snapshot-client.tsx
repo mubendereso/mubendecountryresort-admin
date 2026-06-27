@@ -12,8 +12,9 @@ import type {
   ReservationGroupSnapshot,
   RoomUnitSnapshot
 } from "@/lib/offline-snapshots/types";
+import { OfflineMaintenance } from "./offline-maintenance";
 
-type Tab = "front-desk" | "bookings" | "folios" | "groups" | "rooms";
+type Tab = "front-desk" | "bookings" | "folios" | "groups" | "rooms" | "maintenance";
 
 const ACTION_MESSAGE = "This action requires an internet connection.";
 
@@ -391,6 +392,9 @@ export function OfflineSnapshotClient() {
 
   useEffect(() => {
     let cancelled = false;
+    if (new URLSearchParams(window.location.search).get("tab") === "maintenance") {
+      setTab("maintenance");
+    }
     (async () => {
       try {
         await loadCachedData();
@@ -410,7 +414,8 @@ export function OfflineSnapshotClient() {
     { key: "bookings", label: "Bookings" },
     { key: "folios", label: "Folios" },
     { key: "groups", label: "Groups" },
-    { key: "rooms", label: "Rooms" }
+    { key: "rooms", label: "Rooms" },
+    { key: "maintenance", label: "Maintenance" }
   ];
 
   return (
@@ -424,7 +429,7 @@ export function OfflineSnapshotClient() {
               </p>
               <h1 className="mt-2 text-3xl font-semibold">Offline Mode</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-oliveMuted-600">
-                Read-only operational snapshot. Data may be outdated. Live actions require an internet connection.
+                Cached front-desk data is read-only. Maintenance work can be saved offline and queued for sync.
               </p>
             </div>
             <button
@@ -459,7 +464,7 @@ export function OfflineSnapshotClient() {
           ))}
         </div>
 
-        {tab !== "front-desk" && tab !== "rooms" && (
+        {tab !== "front-desk" && tab !== "rooms" && tab !== "maintenance" && (
           <label className="grid gap-1 text-sm font-semibold text-oliveMuted-700">
             Search cached records
             <input
@@ -482,6 +487,7 @@ export function OfflineSnapshotClient() {
         {data && tab === "folios" && <FolioSnapshotView data={data} search={search} />}
         {data && tab === "groups" && <GroupsSnapshot data={data} search={search} />}
         {data && tab === "rooms" && <RoomsSnapshot data={data} />}
+        {tab === "maintenance" && <OfflineMaintenance />}
       </div>
     </main>
   );

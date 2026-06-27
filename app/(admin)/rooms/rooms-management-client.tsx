@@ -220,8 +220,8 @@ function RoomActions({ room, canManage }: { room: RoomManagementRow; canManage: 
         <Link href={`/rooms/${room.slug}#photos`} className="block rounded-xl px-3 py-2 text-xs font-semibold text-oliveMuted-600 hover:bg-stoneWarm-100">
           Manage Photos
         </Link>
-        <Link href={`/availability?roomTypeId=${room.id}`} className="block rounded-xl px-3 py-2 text-xs font-semibold text-oliveMuted-600 hover:bg-stoneWarm-100">
-          View Availability
+        <Link href="/calendar" className="block rounded-xl px-3 py-2 text-xs font-semibold text-oliveMuted-600 hover:bg-stoneWarm-100">
+          View Calendar
         </Link>
         {canManage && (
           <>
@@ -316,10 +316,10 @@ function RoomCard({ room, canManage }: { room: RoomManagementRow; canManage: boo
             <p className="text-[10px] text-oliveMuted-500">Updated {formatUpdated(room.updated_at)}</p>
             <div className="flex flex-wrap gap-2">
               <Link
-                href={`/availability?roomTypeId=${room.id}`}
+                href="/calendar"
                 className="rounded-[14px] border border-stoneWarm-200 bg-white/65 px-3.5 py-2 text-xs font-semibold text-oliveMuted-600 transition hover:bg-stoneWarm-100"
               >
-                Availability
+                Calendar
               </Link>
               <Link
                 href={`/rooms/${room.slug}`}

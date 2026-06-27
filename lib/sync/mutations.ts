@@ -3,6 +3,15 @@ import "server-only";
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
 import type { AdminRole } from "@/lib/auth/session";
+import {
+  addMaintenanceNote,
+  assignMaintenanceRecord,
+  changeMaintenanceStatus,
+  createMaintenanceRecord,
+  editMaintenanceRecord
+} from "@/lib/maintenance/service";
+import { MAINTENANCE_CATEGORIES, MAINTENANCE_PRIORITIES, MAINTENANCE_STATUSES } from "@/lib/maintenance/types";
+import { uploadImageFile } from "@/lib/storage/image-upload";
 
 // Server-side registry of mutation types the sync push endpoint knows how to
 // apply. Each queued client mutation names one of these. The handler:
@@ -37,6 +46,7 @@ export type MutationContext = {
   actorId: string;
   actorEmail: string | null;
   actorRole: AdminRole;
+  mutationId?: string;
 };
 
 export type AuditEntry = {
@@ -68,6 +78,30 @@ const roomUnitHousekeepingSchema = z.object({
   ]),
   notes: z.string().trim().max(600).nullable()
 });
+
+const nullableUuid = z.string().uuid().nullable();
+const nullableDateTime = z.string().datetime().nullable();
+const nullableMoney = z.number().int().nonnegative().nullable();
+const maintenanceCreateSchema = z.object({
+  id: z.string().uuid(), roomUnitId: nullableUuid, roomTypeId: nullableUuid,
+  assignedTo: nullableUuid, externalVendorName: z.string().trim().max(500).nullable(),
+  category: z.enum(MAINTENANCE_CATEGORIES), priority: z.enum(MAINTENANCE_PRIORITIES),
+  title: z.string().trim().min(3).max(180), description: z.string().trim().min(5).max(5000),
+  scheduledFor: nullableDateTime, expectedReturnAt: nullableDateTime, estimatedCostUgx: nullableMoney
+});
+const maintenanceEditSchema = maintenanceCreateSchema.omit({ id: true, roomUnitId: true, roomTypeId: true, assignedTo: true }).extend({ workOrderId: z.string().uuid() });
+const maintenanceAssignSchema = z.object({ workOrderId: z.string().uuid(), assignedTo: nullableUuid, note: z.string().trim().max(500).nullable() });
+const maintenanceStatusSchema = z.object({ workOrderId: z.string().uuid(), status: z.enum(MAINTENANCE_STATUSES), note: z.string().trim().max(500).nullable(), resolutionNotes: z.string().trim().max(3000).nullable(), actualCostUgx: nullableMoney });
+const maintenanceNoteSchema = z.object({ workOrderId: z.string().uuid(), note: z.string().trim().min(1).max(2000) });
+const maintenancePhotoSchema = z.object({
+  photoId: z.string().uuid(), workOrderId: z.string().uuid(), filename: z.string().trim().min(1).max(240),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/avif"]),
+  base64: z.string().min(4).max(1_600_000)
+});
+
+function maintenanceActor(ctx: MutationContext) {
+  return { userId: ctx.actorId, email: ctx.actorEmail, role: ctx.actorRole, activityId: ctx.mutationId };
+}
 
 export const MUTATIONS: Record<string, MutationDef> = {
   // Mark a contact submission read/archived/new. Idempotent (setting a status
@@ -126,6 +160,64 @@ export const MUTATIONS: Record<string, MutationDef> = {
           context: { notes: input.notes }
         }
       };
+    }
+  },
+  "maintenance.create": {
+    minRole: "staff",
+    run: async (raw, ctx) => {
+      const input = maintenanceCreateSchema.parse(raw);
+      const result = await createMaintenanceRecord(input, maintenanceActor(ctx));
+      return { audit: result.audit };
+    }
+  },
+  "maintenance.edit": {
+    minRole: "staff",
+    run: async (raw, ctx) => {
+      const input = maintenanceEditSchema.parse(raw);
+      return { audit: await editMaintenanceRecord({ id: input.workOrderId, ...input }, maintenanceActor(ctx)) };
+    }
+  },
+  "maintenance.assign": {
+    minRole: "admin",
+    run: async (raw, ctx) => {
+      const input = maintenanceAssignSchema.parse(raw);
+      return { audit: await assignMaintenanceRecord(input.workOrderId, input.assignedTo, input.note, maintenanceActor(ctx)) };
+    }
+  },
+  "maintenance.status": {
+    minRole: "staff",
+    run: async (raw, ctx) => {
+      const input = maintenanceStatusSchema.parse(raw);
+      return { audit: await changeMaintenanceStatus({ id: input.workOrderId, ...input }, maintenanceActor(ctx)) };
+    }
+  },
+  "maintenance.note": {
+    minRole: "staff",
+    run: async (raw, ctx) => {
+      const input = maintenanceNoteSchema.parse(raw);
+      return { audit: await addMaintenanceNote(input.workOrderId, input.note, maintenanceActor(ctx)) };
+    }
+  },
+  "maintenance.photo_upload": {
+    minRole: "staff",
+    run: async (raw, ctx) => {
+      const input = maintenancePhotoSchema.parse(raw);
+      const binary = atob(input.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const file = new File([bytes], input.filename, { type: input.mimeType });
+      const uploaded = await uploadImageFile(file, `maintenance/${input.workOrderId}`);
+      const sql = getSql();
+      await sql`
+        WITH photo AS (
+          INSERT INTO maintenance_photos (id, work_order_id, filename, storage_path, uploaded_by)
+          VALUES (${input.photoId}::uuid, ${input.workOrderId}::uuid, ${input.filename}, ${uploaded.url}, ${ctx.actorId}::uuid)
+          ON CONFLICT (id) DO NOTHING RETURNING work_order_id
+        )
+        INSERT INTO maintenance_activity (id, work_order_id, actor, action, notes)
+        SELECT COALESCE(${ctx.mutationId}::uuid, gen_random_uuid()), work_order_id, ${ctx.actorId}::uuid, 'photo_added', ${input.filename} FROM photo
+      `;
+      return { audit: { action: "maintenance.photo_added", entityType: "maintenance_work_order", entityId: input.workOrderId, summary: "Added a maintenance photo.", context: { photoId: input.photoId, filename: input.filename } } };
     }
   }
 };
