@@ -355,13 +355,6 @@ function QuickShortcutsCard() {
     primary?: boolean;
   }> = [
     {
-      href: "/bookings/new",
-      icon: <PlusIcon className="h-4 w-4" />,
-      title: "New booking",
-      subtitle: "Open the standard reservation form.",
-      primary: true
-    },
-    {
       href: "/night-audit",
       icon: <CalendarIcon className="h-4 w-4" />,
       title: "Night Audit",
@@ -378,6 +371,12 @@ function QuickShortcutsCard() {
       icon: <SearchIcon className="h-4 w-4" />,
       title: "Find booking",
       subtitle: "Search stays, filters, and history."
+    },
+    {
+      href: "/calendar",
+      icon: <CalendarIcon className="h-4 w-4" />,
+      title: "Availability calendar",
+      subtitle: "View live room supply visually."
     }
   ] as const;
 
