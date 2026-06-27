@@ -193,6 +193,7 @@ export default async function InvoiceDetailPage({
               Bill To
             </p>
             <p className="mt-2 text-lg font-semibold">{invoice.bill_to_name}</p>
+            {invoice.company_account_id && <Link href={`/companies/${invoice.company_account_id}`} className="mt-1 inline-block text-xs font-semibold text-oliveMuted-600 hover:underline">Open company account</Link>}
             {invoice.bill_to_contact && <p className="mt-1 text-sm">{invoice.bill_to_contact}</p>}
             {invoice.bill_to_email && <p className="mt-1 text-sm">{invoice.bill_to_email}</p>}
             {invoice.bill_to_phone && <p className="mt-1 text-sm">{invoice.bill_to_phone}</p>}

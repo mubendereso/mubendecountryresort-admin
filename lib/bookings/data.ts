@@ -17,6 +17,12 @@ export async function getBookingById(id: string): Promise<BookingRow | null> {
       b.group_id::text,
       rg.reference AS group_reference,
       rg.group_name AS group_name,
+      b.company_account_id::text,
+      direct_company.company_name,
+      rg.company_account_id::text AS group_company_account_id,
+      group_company.company_name AS group_company_name,
+      COALESCE(rg.company_account_id, b.company_account_id)::text AS effective_company_account_id,
+      COALESCE(group_company.company_name, direct_company.company_name) AS effective_company_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -41,6 +47,8 @@ export async function getBookingById(id: string): Promise<BookingRow | null> {
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     LEFT JOIN reservation_groups rg ON rg.id = b.group_id
+    LEFT JOIN company_accounts direct_company ON direct_company.id = b.company_account_id
+    LEFT JOIN company_accounts group_company ON group_company.id = rg.company_account_id
     LEFT JOIN LATERAL (
       SELECT sum(
         CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END
@@ -73,6 +81,12 @@ export async function listBookings(): Promise<BookingRow[]> {
       b.group_id::text,
       rg.reference AS group_reference,
       rg.group_name AS group_name,
+      b.company_account_id::text,
+      direct_company.company_name,
+      rg.company_account_id::text AS group_company_account_id,
+      group_company.company_name AS group_company_name,
+      COALESCE(rg.company_account_id, b.company_account_id)::text AS effective_company_account_id,
+      COALESCE(group_company.company_name, direct_company.company_name) AS effective_company_name,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,
@@ -97,6 +111,8 @@ export async function listBookings(): Promise<BookingRow[]> {
     JOIN room_types rt ON rt.id = b.room_type_id
     LEFT JOIN room_units ru ON ru.id = b.room_unit_id
     LEFT JOIN reservation_groups rg ON rg.id = b.group_id
+    LEFT JOIN company_accounts direct_company ON direct_company.id = b.company_account_id
+    LEFT JOIN company_accounts group_company ON group_company.id = rg.company_account_id
     LEFT JOIN LATERAL (
       SELECT sum(
         CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END

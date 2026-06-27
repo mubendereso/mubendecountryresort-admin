@@ -17,6 +17,12 @@ export type BookingRow = {
   group_id: string | null;
   group_reference: string | null;
   group_name: string | null;
+  company_account_id: string | null;
+  company_name: string | null;
+  group_company_account_id: string | null;
+  group_company_name: string | null;
+  effective_company_account_id: string | null;
+  effective_company_name: string | null;
   check_in: string;   // YYYY-MM-DD
   check_out: string;  // YYYY-MM-DD
   guests_adults: number;

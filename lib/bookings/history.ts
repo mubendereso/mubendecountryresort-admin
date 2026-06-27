@@ -26,6 +26,10 @@ function titleFromAction(action: string): string {
       return "Booking created";
     case "booking.modified":
       return "Booking updated";
+    case "booking.company_attached":
+      return "Company payer attached";
+    case "booking.company_removed":
+      return "Company payer removed";
     case "booking.group_attached":
       return "Group attached";
     case "booking.group_detached":

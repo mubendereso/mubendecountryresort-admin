@@ -6,6 +6,7 @@ import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getBookingById } from "@/lib/bookings/data";
 import { getCompanyAccountById } from "@/lib/companies/data";
+import { enforceCompanyCreditControl } from "@/lib/companies/credit";
 import { getSql } from "@/lib/db/client";
 import { getFolioData } from "@/lib/folios/data";
 import type { FolioCharge, FolioPayment } from "@/lib/folios/types";
@@ -95,30 +96,36 @@ async function buildBookingDraft(bookingId: string): Promise<RefreshedDraft | nu
   ]);
   if (!booking) return null;
 
+  const company = booking.effective_company_account_id
+    ? await getCompanyAccountById(booking.effective_company_account_id)
+    : null;
+
   const lines = linesFromCharges(folio.charges);
   if (lines.length === 0) throw new Error("This folio has no active charges to invoice.");
   const totalCharges = lines.reduce((sum, line) => sum + line.amount_ugx, 0);
   const totalPaid = totalPayments(folio.payments);
 
   return {
-    companyAccountId: null,
+    companyAccountId: company?.id ?? null,
     sourceReference: booking.reference,
     sourceTitle: booking.room_type_title,
-    billToName: booking.guest_full_name,
-    billToContact: booking.guest_full_name,
-    billToEmail: booking.guest_email,
-    billToPhone: booking.guest_phone,
-    billToAddress: null,
-    taxId: null,
+    billToName: company?.company_name ?? booking.guest_full_name,
+    billToContact: company?.contact_name ?? booking.guest_full_name,
+    billToEmail: company?.contact_email ?? booking.guest_email,
+    billToPhone: company?.contact_phone ?? booking.guest_phone,
+    billToAddress: company?.billing_address ?? null,
+    taxId: company?.tax_id ?? null,
     stayStart: booking.check_in,
     stayEnd: booking.check_out,
-    paymentTermsDays: 0,
+    paymentTermsDays: company?.payment_terms_days ?? 0,
     totalChargesUgx: totalCharges,
     totalPaidUgx: totalPaid,
     balanceDueUgx: Math.max(0, totalCharges - totalPaid),
     note: "Resort invoice generated from booking folio. This is not an EFRIS fiscal invoice.",
     sourceSnapshot: {
       bookingReference: booking.reference,
+      companyAccountId: company?.id ?? null,
+      companyPayerSource: booking.group_company_account_id ? "group" : booking.company_account_id ? "booking" : null,
       status: booking.status,
       roomType: booking.room_type_title,
       payments: folio.payments.map((payment) => ({
@@ -314,6 +321,22 @@ export async function createBookingInvoiceAction(formData: FormData): Promise<In
 
   if (!booking) return { ok: false, error: "Booking not found." };
 
+  const company = booking.effective_company_account_id
+    ? await getCompanyAccountById(booking.effective_company_account_id)
+    : null;
+  if (booking.effective_company_account_id) {
+    const credit = await enforceCompanyCreditControl({
+      companyId: booking.effective_company_account_id,
+      projectedAdditionalUgx: 0,
+      overrideReason: String(formData.get("creditOverrideReason") ?? "").trim() || null,
+      session,
+      relatedEntityType: "invoice",
+      relatedEntityId: bookingId,
+      relatedReference: booking.reference
+    });
+    if (!credit.ok) return { ok: false, error: credit.error };
+  }
+
   const lines = linesFromCharges(folio.charges);
   const totalCharges = lines.reduce((sum, line) => sum + line.amount_ugx, 0);
   const totalPaid = totalPayments(folio.payments);
@@ -324,24 +347,26 @@ export async function createBookingInvoiceAction(formData: FormData): Promise<In
       invoiceType: "booking",
       bookingId,
       groupId: null,
-      companyAccountId: null,
+      companyAccountId: company?.id ?? null,
       sourceReference: booking.reference,
       sourceTitle: booking.room_type_title,
-      billToName: booking.guest_full_name,
-      billToContact: booking.guest_full_name,
-      billToEmail: booking.guest_email,
-      billToPhone: booking.guest_phone,
-      billToAddress: null,
-      taxId: null,
+      billToName: company?.company_name ?? booking.guest_full_name,
+      billToContact: company?.contact_name ?? booking.guest_full_name,
+      billToEmail: company?.contact_email ?? booking.guest_email,
+      billToPhone: company?.contact_phone ?? booking.guest_phone,
+      billToAddress: company?.billing_address ?? null,
+      taxId: company?.tax_id ?? null,
       stayStart: booking.check_in,
       stayEnd: booking.check_out,
       totalChargesUgx: totalCharges,
       totalPaidUgx: totalPaid,
       balanceDueUgx: balanceDue,
-      paymentTermsDays: 0,
+      paymentTermsDays: company?.payment_terms_days ?? 0,
       note: "Resort invoice generated from booking folio. This is not an EFRIS fiscal invoice.",
       sourceSnapshot: {
         bookingReference: booking.reference,
+        companyAccountId: company?.id ?? null,
+        companyPayerSource: booking.group_company_account_id ? "group" : booking.company_account_id ? "booking" : null,
         status: booking.status,
         roomType: booking.room_type_title,
         payments: folio.payments.map((payment) => ({
@@ -386,6 +411,18 @@ export async function createGroupInvoiceAction(formData: FormData): Promise<Invo
   const company = data.group.company_account_id
     ? await getCompanyAccountById(data.group.company_account_id)
     : null;
+  if (company) {
+    const credit = await enforceCompanyCreditControl({
+      companyId: company.id,
+      projectedAdditionalUgx: 0,
+      overrideReason: String(formData.get("creditOverrideReason") ?? "").trim() || null,
+      session,
+      relatedEntityType: "invoice",
+      relatedEntityId: groupId,
+      relatedReference: data.group.reference
+    });
+    if (!credit.ok) return { ok: false, error: credit.error };
+  }
   const lines = groupLines(data.bookings);
   const totalCharges = lines.reduce((sum, line) => sum + line.amount_ugx, 0);
   const totalPaid = data.bookings.reduce((sum, booking) => sum + totalPayments(booking.payments), 0);

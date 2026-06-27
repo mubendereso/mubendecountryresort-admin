@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getBookingHistoryData } from "@/lib/bookings/history";
 import type { BookingStatus } from "@/lib/bookings/types";
+import { listCompanySelectOptions } from "@/lib/companies/data";
+import { BookingCompanyPayerForm } from "./company-payer-form";
 
 function fmtUgx(amount: number): string {
   return new Intl.NumberFormat("en-UG").format(amount) + " UGX";
@@ -94,9 +96,9 @@ export default async function BookingHistoryPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
   const { id } = await params;
-  const data = await getBookingHistoryData(id);
+  const [data, companies] = await Promise.all([getBookingHistoryData(id), listCompanySelectOptions()]);
 
   if (!data) notFound();
 
@@ -138,6 +140,12 @@ export default async function BookingHistoryPage({
                   <Link href={`/groups/${booking.group_id}`} className="font-semibold text-oliveMuted-700 hover:underline">
                     {booking.group_name ?? booking.group_reference ?? "Open group"}
                   </Link>
+                </p>
+              )}
+              {booking.effective_company_account_id && (
+                <p className="text-sm text-oliveMuted-600">
+                  Billed to <Link href={`/companies/${booking.effective_company_account_id}`} className="font-semibold hover:underline">{booking.effective_company_name}</Link>
+                  {booking.group_company_account_id ? " through the group" : " directly"}.
                 </p>
               )}
             </div>
@@ -196,6 +204,10 @@ export default async function BookingHistoryPage({
                 Edit booking
               </Link>
             )}
+          </div>
+          <div className="grid gap-2 border-t border-stoneWarm-200 pt-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Company payer</p>
+            <BookingCompanyPayerForm bookingId={booking.id} groupId={booking.group_id} currentCompanyId={booking.company_account_id} companies={companies} role={session.role} balanceDueUgx={balanceDue} />
           </div>
         </div>
 

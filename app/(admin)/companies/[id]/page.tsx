@@ -5,6 +5,9 @@ import { getCompanyAccountDetail, listCompanyPayments } from "@/lib/companies/da
 import { listInvoicesForCompany } from "@/lib/invoices/data";
 import { CompanyForm } from "../company-form";
 import { CompanyPaymentForm } from "../company-payment-form";
+import { CompanyRatesManager } from "../company-rates-manager";
+import { getRoomTypes } from "@/lib/rooms/data";
+import { setCompanySuspensionAction } from "@/lib/companies/actions";
 
 function fmtUgx(value: number): string {
   return `UGX ${new Intl.NumberFormat("en-UG").format(value)}`;
@@ -38,17 +41,19 @@ export default async function CompanyDetailPage({
 }) {
   const session = await requireApprovedAdminRole();
   const { id } = await params;
-  const [data, invoices, payments] = await Promise.all([
+  const [data, invoices, payments, rooms] = await Promise.all([
     getCompanyAccountDetail(id),
     listInvoicesForCompany(id),
-    listCompanyPayments(id)
+    listCompanyPayments(id),
+    getRoomTypes()
   ]);
   if (!data) notFound();
 
   const company = data.company;
+  const credit = data.credit;
   const exposurePercent =
     company.credit_limit_ugx > 0
-      ? Math.round((company.outstanding_balance_ugx / company.credit_limit_ugx) * 100)
+      ? Math.round((credit.total_credit_exposure_ugx / company.credit_limit_ugx) * 100)
       : 0;
   const invoiceAr = invoices.reduce(
     (sum, invoice) => ({
@@ -76,7 +81,7 @@ export default async function CompanyDetailPage({
                 Company account
               </p>
               <span className="rounded-full border border-stoneWarm-200 bg-stoneWarm-50 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-oliveMuted-500">
-                {company.is_active ? "Active" : "Inactive"}
+                {!company.is_active ? "Inactive" : company.is_suspended ? "Suspended" : credit.credit_status.replace("_", " ")}
               </span>
             </div>
             <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.035em] text-[#2a241a] sm:text-5xl">
@@ -88,33 +93,51 @@ export default async function CompanyDetailPage({
               {company.contact_phone ? ` - ${company.contact_phone}` : ""}
             </p>
           </div>
-          <Link
-            href="/companies"
-            className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-5 py-3 text-sm font-semibold text-oliveMuted-600 transition hover:bg-white"
-          >
-            Back to companies
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/companies/${company.id}/export?dataset=invoices`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export invoices</Link>
+            <Link href={`/companies/${company.id}/export?dataset=allocations`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export allocations</Link>
+            <Link href={`/companies/${company.id}/export?dataset=payments`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export payments</Link>
+            <Link href="/companies" className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-4 py-3 text-sm font-semibold text-oliveMuted-600">Back</Link>
+          </div>
         </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Group exposure</p>
-          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(company.outstanding_balance_ugx)}</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(credit.current_group_exposure_ugx)}</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Invoice AR</p>
-          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(invoiceAr.open)}</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(credit.current_booking_exposure_ugx)}</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">Individual bookings</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Overdue invoices</p>
-          <p className="mt-2 font-serif text-3xl font-semibold text-red-600">{invoiceAr.overdue}</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-red-600">{fmtUgx(credit.overdue_invoices_ugx)}</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">{credit.overdue_invoice_count} invoice{credit.overdue_invoice_count === 1 ? "" : "s"}</p>
+        </div>
+        <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Payment terms</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(credit.total_open_invoices_ugx)}</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">Open invoice AR</p>
+        </div>
+        <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Available credit</p>
+          <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{fmtUgx(credit.available_credit_ugx)}</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">Limit {fmtUgx(company.credit_limit_ugx)} - used {exposurePercent}%</p>
         </div>
         <div className="rounded-[22px] border border-stoneWarm-200/80 bg-[#fffdf8] p-4 shadow-[0_12px_30px_rgba(55,43,30,0.06)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-oliveMuted-500">Payment terms</p>
           <p className="mt-2 font-serif text-3xl font-semibold text-[#2a241a]">{company.payment_terms_days} days</p>
-          <p className="mt-1 text-xs text-oliveMuted-500">Credit used {exposurePercent}%</p>
+          <p className="mt-1 text-xs text-oliveMuted-500">Status {credit.credit_status.replace("_", " ")}</p>
         </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-5">
+        {[
+          ["Current", credit.aging_current_ugx], ["1-30", credit.aging_1_30_ugx], ["31-60", credit.aging_31_60_ugx], ["61-90", credit.aging_61_90_ugx], ["90+", credit.aging_90_plus_ugx]
+        ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-stoneWarm-200 bg-white p-4"><p className="text-xs text-oliveMuted-500">{label} days</p><p className="mt-1 font-semibold">{fmtUgx(Number(value))}</p></div>)}
       </section>
 
       <section className="grid gap-4">
@@ -127,13 +150,32 @@ export default async function CompanyDetailPage({
           </h2>
         </div>
         <CompanyForm company={company} />
+        {session.role === "superadmin" && (
+          <form action={setCompanySuspensionAction} className="surface-card flex flex-wrap items-end gap-3 p-4">
+            <input type="hidden" name="companyId" value={company.id} />
+            <input type="hidden" name="suspend" value={company.is_suspended ? "false" : "true"} />
+            {!company.is_suspended && <label className="grid flex-1 gap-1 text-xs font-semibold text-oliveMuted-600">Suspension reason<input name="reason" required minLength={5} maxLength={500} className="rounded-xl border border-stoneWarm-200 px-3 py-2 text-sm font-normal" /></label>}
+            <button type="submit" className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700">{company.is_suspended ? "Reactivate account" : "Suspend account"}</button>
+          </form>
+        )}
       </section>
+
+      <CompanyRatesManager companyId={company.id} rates={data.rates} rooms={rooms.filter((room) => !room.archived_at).map((room) => ({ id: room.id, title: room.title, publicRateUgx: Number(room.price_ugx) }))} canManage={session.role !== "staff"} />
 
       <CompanyPaymentForm
         companyId={company.id}
         openInvoiceBalanceUgx={invoiceAr.open}
         canRecord={session.role !== "staff"}
       />
+
+      <section className="grid gap-4">
+        <div><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-bronze-500">Individual bookings</p><h2 className="mt-1 text-2xl font-semibold text-[#2a241a]">Direct company-paid stays</h2></div>
+        <div className="surface-card divide-y divide-stoneWarm-200 p-0">
+          {data.bookings.length === 0 ? <p className="px-5 py-8 text-sm text-oliveMuted-600">No individual bookings are billed directly to this company.</p> : data.bookings.map((booking) => (
+            <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div><p className="font-semibold">{booking.reference} - {booking.guest_full_name}</p><p className="mt-1 text-xs text-oliveMuted-500">{booking.room_type_title} - {booking.check_in} to {booking.check_out} - balance {fmtUgx(booking.balance_due_ugx)}</p></div><Link href={`/bookings/${booking.id}/folio`} className="rounded-xl border border-stoneWarm-200 px-3 py-2 text-xs font-semibold">Open folio</Link></div>
+          ))}
+        </div>
+      </section>
 
       <section className="grid gap-4">
         <div className="flex items-end justify-between gap-4 px-1">
@@ -237,7 +279,7 @@ export default async function CompanyDetailPage({
                             {allocation.invoice_number ?? "Invoice"} - {allocation.invoice_source_reference}
                           </p>
                           <p className="mt-1 text-xs text-oliveMuted-500">
-                            {allocation.group_reference} - {allocation.group_name}
+                            {allocation.group_id ? `${allocation.group_reference} - ${allocation.group_name}` : `${allocation.booking_reference} - ${allocation.guest_name}`}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">

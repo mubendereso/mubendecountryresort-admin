@@ -6,6 +6,7 @@ import { getFolioData } from "@/lib/folios/data";
 import { createBookingInvoiceAndRedirect } from "@/lib/invoices/actions";
 import { listInvoicesForBooking } from "@/lib/invoices/data";
 import { FolioClient } from "./folio-client";
+import { getCompanyCreditAssessment } from "@/lib/companies/data";
 
 function fmtUgx(value: number): string {
   return `UGX ${new Intl.NumberFormat("en-UG").format(value)}`;
@@ -26,6 +27,11 @@ export default async function FolioPage({
   ]);
 
   if (!booking) notFound();
+  const credit = booking.effective_company_account_id
+    ? await getCompanyCreditAssessment(booking.effective_company_account_id)
+    : null;
+  const invoiceNeedsOverride = credit?.credit_status === "overdue" || credit?.credit_status === "over_limit";
+  const companyBlocked = Boolean(credit && (!credit.is_active || credit.is_suspended));
 
   return (
     <div className="grid gap-6">
@@ -57,6 +63,16 @@ export default async function FolioPage({
         role={session.role}
       />
 
+      {booking.effective_company_account_id && (
+        <section className={`rounded-2xl border px-5 py-4 ${credit?.credit_status === "clear" ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+          <p className="text-sm font-semibold text-[#2a241a]">
+            Company payer: <Link href={`/companies/${booking.effective_company_account_id}`} className="hover:underline">{booking.effective_company_name}</Link>
+            {booking.group_company_account_id ? " (inherited from group)" : " (direct booking payer)"}
+          </p>
+          {credit && <p className="mt-1 text-xs text-oliveMuted-600">Credit status {credit.credit_status.replace("_", " ")} - available {fmtUgx(credit.available_credit_ugx)} - overdue {fmtUgx(credit.overdue_invoices_ugx)}</p>}
+        </section>
+      )}
+
       <section className="surface-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -67,12 +83,17 @@ export default async function FolioPage({
           </div>
           <form action={createBookingInvoiceAndRedirect}>
             <input type="hidden" name="bookingId" value={booking.id} />
+            {invoiceNeedsOverride && session.role !== "staff" && (
+              <textarea name="creditOverrideReason" required minLength={5} maxLength={500} rows={2} placeholder="Credit override reason" className="mb-2 block w-64 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs" />
+            )}
             <button
               type="submit"
+              disabled={companyBlocked || (invoiceNeedsOverride && session.role === "staff")}
               className="rounded-2xl bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500"
             >
               Create Invoice
             </button>
+            {(companyBlocked || (invoiceNeedsOverride && session.role === "staff")) && <p className="mt-2 max-w-64 text-xs text-red-700">Company credit approval is required before invoicing.</p>}
           </form>
         </div>
 

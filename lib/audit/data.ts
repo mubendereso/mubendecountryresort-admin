@@ -114,6 +114,24 @@ export function titleFromAuditAction(action: string): string {
       return "Room type duplicated";
     case "room_type.rates_updated":
       return "Room rates updated";
+    case "booking.company_attached":
+      return "Company payer attached";
+    case "booking.company_removed":
+      return "Company payer removed";
+    case "company_rate.created":
+      return "Corporate rate created";
+    case "company_rate.updated":
+      return "Corporate rate updated";
+    case "company_rate.archived":
+      return "Corporate rate archived";
+    case "company_account.credit_override":
+      return "Credit override approved";
+    case "company_account.suspended":
+      return "Company account suspended";
+    case "company_account.reactivated":
+      return "Company account reactivated";
+    case "company_account.ar_exported":
+      return "Company AR exported";
     case "room_type.cover_updated":
       return "Room cover updated";
     case "room_type.gallery_image_added":

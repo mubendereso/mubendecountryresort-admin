@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
@@ -26,6 +26,27 @@ export type BookingFormGroup = {
   reference: string;
   groupName: string;
   status?: "active" | "archived" | "closed";
+  companyAccountId?: string | null;
+  companyName?: string | null;
+};
+
+export type BookingCompanyOption = {
+  id: string;
+  companyName: string;
+  isActive: boolean;
+  isSuspended: boolean;
+  creditStatus: "clear" | "warning" | "over_limit" | "overdue" | "suspended";
+  availableCreditUgx: number;
+  overdueInvoicesUgx: number;
+};
+
+export type BookingCorporateRate = {
+  id: string;
+  companyAccountId: string;
+  roomTypeSlug: string;
+  rateUgx: number;
+  validFrom: string;
+  validTo: string | null;
 };
 
 function fmtUgx(n: number): string {
@@ -68,7 +89,10 @@ export function BookingForm({
   bookingId,
   status,
   initial,
-  group
+  group,
+  companies = [],
+  corporateRates = [],
+  role = "staff"
 }: {
   mode: "create" | "edit";
   rooms: RoomOption[];
@@ -76,6 +100,9 @@ export function BookingForm({
   status?: "confirmed" | "checked_in";
   initial?: BookingFormInitial;
   group?: BookingFormGroup | null;
+  companies?: BookingCompanyOption[];
+  corporateRates?: BookingCorporateRate[];
+  role?: "staff" | "admin" | "superadmin";
 }) {
   const router = useRouter();
   const today = todayISO();
@@ -89,6 +116,8 @@ export function BookingForm({
   const [children, setChildren] = useState(initial?.children ?? 0);
   const [agreedRoomPrice, setAgreedRoomPrice] = useState(0);
   const [depositAmount, setDepositAmount] = useState(0);
+  const [companyId, setCompanyId] = useState(group?.companyAccountId ?? "");
+  const [applyCorporateRate, setApplyCorporateRate] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -98,11 +127,35 @@ export function BookingForm({
   );
   const nights = nightsBetween(checkIn, checkOut);
   const total = selectedRoom ? selectedRoom.priceUgx * nights : 0;
+  const lastNight = checkOut ? addDays(checkOut, -1) : checkOut;
+  const selectedCompany = companies.find((company) => company.id === companyId) ?? null;
+  const corporateRate = corporateRates.find((rate) =>
+    rate.companyAccountId === companyId &&
+    rate.roomTypeSlug === roomSlug &&
+    rate.validFrom <= checkIn &&
+    (!rate.validTo || rate.validTo >= lastNight)
+  ) ?? null;
+  const corporateTotal = corporateRate ? Math.min(total, corporateRate.rateUgx * nights) : 0;
   const finalRoomPrice = agreedRoomPrice > 0 ? agreedRoomPrice : total;
   const discountAmount = Math.max(0, total - finalRoomPrice);
   const discountPercent = total > 0 ? (discountAmount / total) * 100 : 0;
   const invalidAgreedPrice = agreedRoomPrice > total;
   const balanceDue = Math.max(0, finalRoomPrice - depositAmount);
+  const projectedCompanyBalance = Math.max(0, finalRoomPrice - depositAmount);
+  const needsCreditOverride = Boolean(
+    selectedCompany &&
+    (selectedCompany.creditStatus === "overdue" ||
+      selectedCompany.creditStatus === "over_limit" ||
+      projectedCompanyBalance > selectedCompany.availableCreditUgx)
+  );
+
+  useEffect(() => {
+    if (!isEdit && applyCorporateRate && corporateRate && nights > 0) {
+      setAgreedRoomPrice(corporateTotal);
+    } else if (!isEdit && !companyId) {
+      setAgreedRoomPrice(0);
+    }
+  }, [applyCorporateRate, companyId, corporateRate, corporateTotal, isEdit, nights]);
 
   // A checked-in guest may keep a past check-in date; otherwise no past dates.
   const checkInMin = isCheckedIn ? undefined : today;
@@ -337,6 +390,63 @@ export function BookingForm({
             />
           </div>
         </div>
+
+        {!isEdit && (
+          <div className="surface-card grid gap-4 p-5">
+            <div>
+              <p className={LABEL_CLASS}>Billing party</p>
+              <p className="mt-1 text-sm text-oliveMuted-600">
+                Choose guest-paid or a direct company payer. Group bookings inherit the payer from their group.
+              </p>
+            </div>
+            {group ? (
+              <div className="rounded-2xl border border-stoneWarm-200 bg-stoneWarm-50 px-4 py-3 text-sm text-oliveMuted-700">
+                {group.companyAccountId
+                  ? `Company payer inherited from group: ${group.companyName ?? "Company account"}.`
+                  : "This group has no company payer; the booking remains guest/group paid."}
+                {group.companyAccountId && <input type="hidden" name="companyId" value="" />}
+              </div>
+            ) : (
+              <div className="grid gap-1.5">
+                <label htmlFor="companyId" className={LABEL_CLASS}>Company payer</label>
+                <select id="companyId" name="companyId" value={companyId} onChange={(event) => setCompanyId(event.target.value)} className={FIELD_CLASS}>
+                  <option value="">Guest paid</option>
+                  {companies.map((company) => (
+                    <option key={company.id} value={company.id} disabled={!company.isActive || company.isSuspended}>
+                      {company.companyName}{!company.isActive ? " (inactive)" : company.isSuspended ? " (suspended)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {companyId && corporateRate && (
+              <label className="flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <input type="checkbox" checked={applyCorporateRate} onChange={(event) => setApplyCorporateRate(event.target.checked)} className="mt-0.5 h-4 w-4" />
+                <span>
+                  Apply negotiated rate of {fmtUgx(corporateRate.rateUgx)} per night. Final corporate stay rate: {fmtUgx(corporateTotal)}.
+                </span>
+              </label>
+            )}
+            {applyCorporateRate && corporateRate && <input type="hidden" name="applyCorporateRate" value="true" />}
+
+            {selectedCompany && selectedCompany.creditStatus !== "clear" && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Credit status: <span className="font-semibold">{selectedCompany.creditStatus.replace("_", " ")}</span>. Available credit {fmtUgx(selectedCompany.availableCreditUgx)}
+                {selectedCompany.overdueInvoicesUgx > 0 ? `; overdue ${fmtUgx(selectedCompany.overdueInvoicesUgx)}` : ""}.
+              </div>
+            )}
+            {needsCreditOverride && role !== "staff" && (
+              <div className="grid gap-1.5">
+                <label htmlFor="creditOverrideReason" className={LABEL_CLASS}>Credit override reason</label>
+                <textarea id="creditOverrideReason" name="creditOverrideReason" rows={2} minLength={5} maxLength={500} required className={FIELD_CLASS} />
+              </div>
+            )}
+            {needsCreditOverride && role === "staff" && (
+              <p className="text-sm font-medium text-red-700">An admin or superadmin must approve this company-billed booking.</p>
+            )}
+          </div>
+        )}
 
         {!isEdit && (
           <div className="surface-card grid gap-4 p-5">

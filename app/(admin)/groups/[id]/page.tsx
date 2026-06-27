@@ -102,7 +102,7 @@ export default async function GroupDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireApprovedAdminRole();
+  const session = await requireApprovedAdminRole();
   const { id } = await params;
   const [data, companies] = await Promise.all([
     getReservationGroupDetailData(id),
@@ -389,6 +389,11 @@ export default async function GroupDetailPage({
             </Link>
           )}
         </div>
+        {group.company_account_id && companies.find((company) => company.id === group.company_account_id)?.credit_status !== "clear" && (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Credit status: {companies.find((company) => company.id === group.company_account_id)?.credit_status.replace("_", " ")} - available {fmtUgx(companies.find((company) => company.id === group.company_account_id)?.available_credit_ugx ?? 0)}.
+          </p>
+        )}
         <form action={updateCompanyPayer} className="grid gap-3 md:grid-cols-[1fr_auto]">
           <input type="hidden" name="groupId" value={group.id} />
           <select
@@ -398,10 +403,12 @@ export default async function GroupDetailPage({
           >
             <option value="">No company payer</option>
             {companies.map((company) => (
-              <option key={company.id} value={company.id} disabled={!company.is_active && company.id !== group.company_account_id}>
+              <option key={company.id} value={company.id} disabled={(!company.is_active || company.is_suspended) && company.id !== group.company_account_id}>
                 {company.company_name}
                 {company.contact_name ? ` - ${company.contact_name}` : ""}
                 {!company.is_active ? " (inactive)" : ""}
+                {company.is_suspended ? " (suspended)" : ""}
+                {company.credit_status !== "clear" ? ` (${company.credit_status.replace("_", " ")})` : ""}
               </option>
             ))}
           </select>
@@ -411,6 +418,7 @@ export default async function GroupDetailPage({
           >
             Save payer
           </button>
+          {session.role !== "staff" && <textarea name="creditOverrideReason" minLength={5} maxLength={500} rows={2} placeholder="Override reason, required for overdue or over-limit accounts" className="rounded-2xl border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm md:col-span-2" />}
         </form>
       </section>
 

@@ -5,6 +5,8 @@ import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getBookingById } from "./data";
+import { getApplicableCompanyRate, getCompanyAccountById } from "@/lib/companies/data";
+import { enforceCompanyCreditControl } from "@/lib/companies/credit";
 import type { BookingStatus } from "./types";
 
 // Only these forward-only transitions are allowed via the admin UI.
@@ -175,9 +177,12 @@ export async function createStaffBookingAction(
   const specialRequests = String(formData.get("specialRequests") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const groupId = String(formData.get("groupId") ?? "").trim() || null;
-  const agreedRoomPrice = Math.round(
+  let agreedRoomPrice = Math.round(
     Number(String(formData.get("agreedRoomPriceUgx") ?? "0").replace(/[,\s]/g, ""))
   );
+  const requestedCompanyId = String(formData.get("companyId") ?? "").trim() || null;
+  const applyCorporateRate = formData.get("applyCorporateRate") === "true";
+  const creditOverrideReason = String(formData.get("creditOverrideReason") ?? "").trim() || null;
   const depositAmount = Math.round(Number(String(formData.get("depositAmountUgx") ?? "0").replace(/[,\s]/g, "")));
   const depositMethod = String(formData.get("depositMethod") ?? "cash").trim();
   const depositReference = String(formData.get("depositReference") ?? "").trim() || null;
@@ -192,6 +197,12 @@ export async function createStaffBookingAction(
   }
   if (groupId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(groupId)) {
     return { ok: false, error: "Please select a valid group." };
+  }
+  if (requestedCompanyId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedCompanyId)) {
+    return { ok: false, error: "Please select a valid company payer." };
+  }
+  if (groupId && requestedCompanyId) {
+    return { ok: false, error: "Group bookings inherit their company payer from the group." };
   }
   const textError = validateBookingTextFields({
     roomTypeSlug,
@@ -230,27 +241,48 @@ export async function createStaffBookingAction(
     }
 
     const roomType = quoteRows[0];
-    const quotedTotal = Number(roomType.price_ugx) * nightsBetween(checkIn, checkOut);
+    const nights = nightsBetween(checkIn, checkOut);
+    const quotedTotal = Number(roomType.price_ugx) * nights;
     if (agreedRoomPrice > quotedTotal) {
       return { ok: false, error: "Agreed room price cannot be greater than the standard room total." };
+    }
+    const groupRows =
+      groupId
+        ? ((await sql`
+            SELECT id::text, reference, group_name, company_account_id::text
+            FROM reservation_groups
+            WHERE id = ${groupId}::uuid
+            LIMIT 1
+          `) as { id: string; reference: string; group_name: string; company_account_id: string | null }[])
+        : [];
+    const bookingGroup = groupRows[0] ?? null;
+    if (groupId && !bookingGroup) {
+      return { ok: false, error: "That group could not be found." };
+    }
+
+    const effectiveCompanyId = bookingGroup?.company_account_id ?? requestedCompanyId;
+    const company = effectiveCompanyId ? await getCompanyAccountById(effectiveCompanyId) : null;
+    if (effectiveCompanyId && !company) return { ok: false, error: "Company payer not found." };
+    const corporateRate = effectiveCompanyId
+      ? await getApplicableCompanyRate(effectiveCompanyId, roomType.id, checkIn, checkOut)
+      : null;
+    if (applyCorporateRate && corporateRate) {
+      agreedRoomPrice = Math.min(quotedTotal, corporateRate.rate_ugx * nights);
     }
     const finalRoomPrice = agreedRoomPrice > 0 ? agreedRoomPrice : quotedTotal;
     if (depositAmount > finalRoomPrice) {
       return { ok: false, error: "Deposit cannot be greater than the final room price." };
     }
-
-    const groupRows =
-      groupId
-        ? ((await sql`
-            SELECT id::text, reference, group_name
-            FROM reservation_groups
-            WHERE id = ${groupId}::uuid
-            LIMIT 1
-          `) as { id: string; reference: string; group_name: string }[])
-        : [];
-    const bookingGroup = groupRows[0] ?? null;
-    if (groupId && !bookingGroup) {
-      return { ok: false, error: "That group could not be found." };
+    if (effectiveCompanyId) {
+      const credit = await enforceCompanyCreditControl({
+        companyId: effectiveCompanyId,
+        projectedAdditionalUgx: Math.max(0, finalRoomPrice - depositAmount),
+        overrideReason: creditOverrideReason,
+        session,
+        relatedEntityType: "booking",
+        relatedReference: `New booking for ${guestFullName}`
+      });
+      if (!credit.ok) return { ok: false, error: credit.error };
     }
 
     const rows = (await sql`
@@ -279,6 +311,14 @@ export async function createStaffBookingAction(
           AND ${groupId}::uuid IS NOT NULL
         RETURNING b.id
       ),
+      company_billed AS (
+        UPDATE bookings b
+        SET company_account_id = ${bookingGroup ? null : requestedCompanyId}::uuid
+        FROM created c
+        WHERE b.id = c.booking_id
+          AND ${bookingGroup ? null : requestedCompanyId}::uuid IS NOT NULL
+        RETURNING b.id
+      ),
       deposit_payment AS (
         INSERT INTO folio_payments (booking_id, amount_ugx, method, reference, recorded_by)
         SELECT
@@ -296,7 +336,8 @@ export async function createStaffBookingAction(
         c.reference,
         c.quoted_total_ugx,
         (SELECT count(*) FROM deposit_payment) AS deposit_payment_count,
-        (SELECT count(*) FROM grouped) AS grouped_count
+        (SELECT count(*) FROM grouped) AS grouped_count,
+        (SELECT count(*) FROM company_billed) AS company_billed_count
       FROM created c
     `) as { booking_id: string; reference: string; quoted_total_ugx: string }[];
 
@@ -320,6 +361,12 @@ export async function createStaffBookingAction(
         groupId,
         groupReference: bookingGroup?.reference ?? null,
         groupName: bookingGroup?.group_name ?? null,
+        companyAccountId: effectiveCompanyId,
+        companyName: company?.company_name ?? null,
+        corporateRateId: corporateRate?.id ?? null,
+        corporateNightlyRateUgx: corporateRate?.rate_ugx ?? null,
+        corporateRateApplied: Boolean(applyCorporateRate && corporateRate),
+        creditOverrideReason,
         checkIn,
         checkOut,
         guestsAdults,

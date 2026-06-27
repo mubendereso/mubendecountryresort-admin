@@ -5,6 +5,8 @@ import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getSql } from "@/lib/db/client";
 import { getCompanyAccountById } from "./data";
+import { enforceCompanyCreditControl } from "./credit";
+import { getBookingById } from "@/lib/bookings/data";
 import { getReservationGroupById } from "@/lib/groups/data";
 import type { PaymentMethod } from "@/lib/folios/types";
 
@@ -31,6 +33,10 @@ export type CompanyActionResult =
 
 export type GroupCompanyActionResult =
   | { ok: true; groupId: string; companyId: string | null }
+  | { ok: false; error: string };
+
+export type BookingCompanyActionResult =
+  | { ok: true; bookingId: string; companyId: string | null }
   | { ok: false; error: string };
 
 export type RecordCompanyPaymentResult =
@@ -242,6 +248,18 @@ export async function setGroupCompanyAccountAction(formData: FormData): Promise<
   const company = companyId ? await getCompanyAccountById(companyId) : null;
   if (companyId && !company) return { ok: false, error: "Company account not found." };
   if (company && !company.is_active) return { ok: false, error: "Inactive company accounts cannot be attached to groups." };
+  if (companyId && companyId !== group.company_account_id) {
+    const credit = await enforceCompanyCreditControl({
+      companyId,
+      projectedAdditionalUgx: Math.max(0, group.balance_due_ugx),
+      overrideReason: normalizedText(formData.get("creditOverrideReason")) || null,
+      session,
+      relatedEntityType: "reservation_group",
+      relatedEntityId: groupId,
+      relatedReference: group.reference
+    });
+    if (!credit.ok) return { ok: false, error: credit.error };
+  }
 
   const sql = getSql();
   try {
@@ -281,6 +299,120 @@ export async function setGroupCompanyAccountAction(formData: FormData): Promise<
     console.error("set_group_company_account failed:", error);
     return { ok: false, error: "Company payer could not be updated. Please try again." };
   }
+}
+
+export async function setBookingCompanyAccountAction(formData: FormData): Promise<BookingCompanyActionResult> {
+  const session = await requireApprovedAdminRole();
+  const bookingId = normalizedText(formData.get("bookingId"));
+  const companyId = normalizedText(formData.get("companyId")) || null;
+  if (!bookingId || !isUuid(bookingId)) return { ok: false, error: "Please select a valid booking." };
+  if (companyId && !isUuid(companyId)) return { ok: false, error: "Please select a valid company." };
+
+  const booking = await getBookingById(bookingId);
+  if (!booking) return { ok: false, error: "Booking not found." };
+  if (booking.group_id && companyId) {
+    return { ok: false, error: "Group bookings inherit their company payer from the group. Update the group payer instead." };
+  }
+
+  const company = companyId ? await getCompanyAccountById(companyId) : null;
+  if (companyId && !company) return { ok: false, error: "Company account not found." };
+  if (companyId && companyId !== booking.company_account_id) {
+    const credit = await enforceCompanyCreditControl({
+      companyId,
+      projectedAdditionalUgx: Math.max(0, booking.total_charges_ugx - booking.total_paid_ugx),
+      overrideReason: normalizedText(formData.get("creditOverrideReason")) || null,
+      session,
+      relatedEntityType: "booking",
+      relatedEntityId: bookingId,
+      relatedReference: booking.reference
+    });
+    if (!credit.ok) return { ok: false, error: credit.error };
+  }
+
+  const sql = getSql();
+  await sql`UPDATE bookings SET company_account_id = ${companyId}::uuid WHERE id = ${bookingId}::uuid`;
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: companyId ? "booking.company_attached" : "booking.company_removed",
+    entityType: "booking",
+    entityId: bookingId,
+    summary: companyId ? `Attached company payer ${company?.company_name} to booking ${booking.reference}.` : `Removed company payer from booking ${booking.reference}.`,
+    context: { bookingId, bookingReference: booking.reference, previousCompanyId: booking.company_account_id, nextCompanyId: companyId, nextCompanyName: company?.company_name ?? null }
+  });
+  revalidatePath("/bookings");
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath(`/bookings/${bookingId}/folio`);
+  if (booking.company_account_id) revalidatePath(`/companies/${booking.company_account_id}`);
+  if (companyId) revalidatePath(`/companies/${companyId}`);
+  return { ok: true, bookingId, companyId };
+}
+
+export async function saveCompanyRoomRateAction(formData: FormData): Promise<CompanyActionResult> {
+  const session = await requireApprovedAdminRole();
+  if (session.role === "staff") return { ok: false, error: "Only admin or superadmin users can manage corporate rates." };
+  const companyId = normalizedText(formData.get("companyId"));
+  const rateId = normalizedText(formData.get("rateId")) || null;
+  const roomTypeId = normalizedText(formData.get("roomTypeId"));
+  const rateUgx = parseUgxAmount(formData.get("rateUgx"));
+  const validFrom = normalizedText(formData.get("validFrom"));
+  const validTo = normalizedText(formData.get("validTo")) || null;
+  const notes = normalizedText(formData.get("notes")) || null;
+  if (!isUuid(companyId) || !isUuid(roomTypeId) || (rateId && !isUuid(rateId))) return { ok: false, error: "Invalid company or room type." };
+  if (!Number.isFinite(rateUgx) || rateUgx <= 0) return { ok: false, error: "Corporate rate must be a positive amount." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom) || (validTo && !/^\d{4}-\d{2}-\d{2}$/.test(validTo))) return { ok: false, error: "Enter valid rate dates." };
+  if (validTo && validTo < validFrom) return { ok: false, error: "Valid-to date cannot be before valid-from date." };
+  if ((notes?.length ?? 0) > 500) return { ok: false, error: "Rate notes are too long." };
+
+  const sql = getSql();
+  const roomRows = (await sql`SELECT price_ugx FROM room_types WHERE id=${roomTypeId}::uuid LIMIT 1`) as { price_ugx: string | number }[];
+  if (!roomRows[0]) return { ok: false, error: "Room type not found." };
+  if (rateUgx > Number(roomRows[0].price_ugx)) return { ok: false, error: "Corporate rate cannot exceed the public room rate." };
+  const conflicts = (await sql`
+    SELECT id::text FROM company_room_rates
+    WHERE company_account_id = ${companyId}::uuid AND room_type_id = ${roomTypeId}::uuid
+      AND status = 'active' AND (${rateId}::uuid IS NULL OR id <> ${rateId}::uuid)
+      AND daterange(valid_from, COALESCE(valid_to, 'infinity'::date), '[]') && daterange(${validFrom}::date, COALESCE(${validTo}::date, 'infinity'::date), '[]')
+    LIMIT 1
+  `) as { id: string }[];
+  if (conflicts[0]) return { ok: false, error: "An active corporate rate already covers part of this date range." };
+
+  const rows = rateId
+    ? (await sql`UPDATE company_room_rates SET room_type_id=${roomTypeId}::uuid, rate_ugx=${rateUgx}, valid_from=${validFrom}::date, valid_to=${validTo}::date, notes=${notes} WHERE id=${rateId}::uuid AND company_account_id=${companyId}::uuid RETURNING id::text`) as { id: string }[]
+    : (await sql`INSERT INTO company_room_rates (company_account_id, room_type_id, rate_ugx, valid_from, valid_to, notes, created_by) VALUES (${companyId}::uuid, ${roomTypeId}::uuid, ${rateUgx}, ${validFrom}::date, ${validTo}::date, ${notes}, ${session.userId}::uuid) RETURNING id::text`) as { id: string }[];
+  if (!rows[0]) return { ok: false, error: "Corporate rate could not be saved." };
+  await recordAuditLog({ actorId: session.userId, actorEmail: session.email, action: rateId ? "company_rate.updated" : "company_rate.created", entityType: "company_account", entityId: companyId, summary: `${rateId ? "Updated" : "Created"} a negotiated corporate room rate.`, context: { rateId: rows[0].id, roomTypeId, rateUgx, validFrom, validTo, notes } });
+  revalidatePath(`/companies/${companyId}`);
+  return { ok: true, companyId };
+}
+
+export async function archiveCompanyRoomRateAction(formData: FormData): Promise<void> {
+  const session = await requireApprovedAdminRole();
+  if (session.role === "staff") throw new Error("Only admin or superadmin users can archive corporate rates.");
+  const companyId = normalizedText(formData.get("companyId"));
+  const rateId = normalizedText(formData.get("rateId"));
+  if (!isUuid(companyId) || !isUuid(rateId)) throw new Error("Invalid corporate rate.");
+  const sql = getSql();
+  await sql`UPDATE company_room_rates SET status='archived' WHERE id=${rateId}::uuid AND company_account_id=${companyId}::uuid`;
+  await recordAuditLog({ actorId: session.userId, actorEmail: session.email, action: "company_rate.archived", entityType: "company_account", entityId: companyId, summary: "Archived a negotiated corporate room rate.", context: { rateId } });
+  revalidatePath(`/companies/${companyId}`);
+}
+
+export async function setCompanySuspensionAction(formData: FormData): Promise<void> {
+  const session = await requireApprovedAdminRole();
+  if (session.role !== "superadmin") throw new Error("Only superadmin can suspend or reactivate company accounts.");
+  const companyId = normalizedText(formData.get("companyId"));
+  const suspend = normalizedText(formData.get("suspend")) === "true";
+  const reason = normalizedText(formData.get("reason"));
+  if (!isUuid(companyId)) throw new Error("Invalid company account.");
+  if (suspend && reason.length < 5) throw new Error("Suspension reason is required.");
+  const company = await getCompanyAccountById(companyId);
+  if (!company) throw new Error("Company account not found.");
+  const sql = getSql();
+  await sql`UPDATE company_accounts SET is_suspended=${suspend}, suspended_at=CASE WHEN ${suspend} THEN now() ELSE NULL END, suspended_by=CASE WHEN ${suspend} THEN ${session.userId}::uuid ELSE NULL END, suspension_reason=CASE WHEN ${suspend} THEN ${reason} ELSE NULL END WHERE id=${companyId}::uuid`;
+  await recordAuditLog({ actorId: session.userId, actorEmail: session.email, action: suspend ? "company_account.suspended" : "company_account.reactivated", entityType: "company_account", entityId: companyId, summary: `${suspend ? "Suspended" : "Reactivated"} company account ${company.company_name}.`, context: { reason: suspend ? reason : null } });
+  revalidatePath("/companies");
+  revalidatePath(`/companies/${companyId}`);
 }
 
 export async function recordCompanyPaymentAction(
@@ -331,6 +463,8 @@ export async function recordCompanyPaymentAction(
           i.id AS invoice_id,
           i.invoice_number,
           i.source_reference,
+          i.invoice_type,
+          i.booking_id,
           i.group_id,
           i.due_date,
           i.created_at,
@@ -340,15 +474,20 @@ export async function recordCompanyPaymentAction(
         FROM invoices i
         CROSS JOIN company_row cr
         LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint AS current_paid_ugx
-          FROM folio_payments fp
-          JOIN bookings b ON b.id = fp.booking_id
-          WHERE b.group_id = i.group_id
+          SELECT CASE
+            WHEN i.invoice_type = 'booking' THEN (
+              SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+              FROM folio_payments fp WHERE fp.booking_id = i.booking_id
+            )
+            ELSE (
+              SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+              FROM folio_payments fp JOIN bookings b ON b.id = fp.booking_id
+              WHERE b.group_id = i.group_id
+            )
+          END AS current_paid_ugx
         ) live ON true
         WHERE i.company_account_id = cr.id
-          AND i.invoice_type = 'group'
           AND i.status = 'issued'
-          AND i.group_id IS NOT NULL
         FOR UPDATE OF i
       ),
       running_invoices AS (
@@ -394,6 +533,8 @@ export async function recordCompanyPaymentAction(
           ri.invoice_id,
           ri.invoice_number,
           ri.source_reference,
+          ri.invoice_type,
+          ri.booking_id,
           ri.group_id,
           LEAST(
             ri.balance_ugx,
@@ -427,7 +568,32 @@ export async function recordCompanyPaymentAction(
           ia.invoice_id
         FROM invoice_allocations ia
         CROSS JOIN company_payment cp
+        WHERE ia.invoice_type = 'group'
         RETURNING id, group_id, amount_ugx, company_payment_id, company_invoice_id
+      ),
+      direct_payments AS (
+        INSERT INTO folio_payments (
+          booking_id,
+          amount_ugx,
+          method,
+          reference,
+          recorded_by,
+          company_payment_id,
+          company_invoice_id
+        )
+        SELECT
+          ia.booking_id,
+          ia.allocation_amount_ugx,
+          ${method},
+          ${reference},
+          ${session.userId}::uuid,
+          cp.id,
+          ia.invoice_id
+        FROM invoice_allocations ia
+        CROSS JOIN company_payment cp
+        WHERE ia.invoice_type = 'booking'
+          AND ia.booking_id IS NOT NULL
+        RETURNING id, booking_id, amount_ugx, company_payment_id, company_invoice_id
       ),
       company_allocation_ledger AS (
         INSERT INTO company_account_payment_allocations (
@@ -435,6 +601,8 @@ export async function recordCompanyPaymentAction(
           invoice_id,
           group_id,
           group_payment_id,
+          booking_id,
+          folio_payment_id,
           amount_ugx
         )
         SELECT
@@ -442,8 +610,20 @@ export async function recordCompanyPaymentAction(
           gp.company_invoice_id,
           gp.group_id,
           gp.id,
+          NULL::uuid,
+          NULL::uuid,
           gp.amount_ugx
         FROM group_payments gp
+        UNION ALL
+        SELECT
+          dp.company_payment_id,
+          dp.company_invoice_id,
+          NULL::uuid,
+          NULL::uuid,
+          dp.booking_id,
+          dp.id,
+          dp.amount_ugx
+        FROM direct_payments dp
         RETURNING company_payment_id, invoice_id, amount_ugx
       ),
       booking_balances AS (
@@ -600,7 +780,7 @@ export async function recordCompanyPaymentAction(
         ok: false,
         error:
           totalOpen <= 0
-            ? "This company has no issued group invoice balance to pay."
+            ? "This company has no issued invoice balance to pay."
             : `Company payment cannot exceed issued invoice AR of UGX ${new Intl.NumberFormat("en-UG").format(totalOpen)}.`
       };
     }
