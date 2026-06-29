@@ -5,6 +5,12 @@ import {
   getOfflineLastSyncedAt,
   refreshOfflineSnapshots
 } from "@/lib/offline-snapshots/client";
+import {
+  OFFLINE_ACCESS_LOCKED_VALUE,
+  OFFLINE_ACCESS_STORAGE_KEY
+} from "@/lib/local-db/security-policy";
+
+const FOCUS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 function formatSyncTime(value: string | null): string {
   if (!value) return "Not synced yet";
@@ -23,6 +29,8 @@ export function OfflineSnapshotRefresher() {
 
   useEffect(() => {
     let cancelled = false;
+    let lastRefreshStartedAt = 0;
+    let refreshInFlight: Promise<void> | null = null;
 
     async function loadLastSync() {
       try {
@@ -33,38 +41,69 @@ export function OfflineSnapshotRefresher() {
       }
     }
 
-    async function refresh() {
-      setOnline(navigator.onLine);
-      await loadLastSync();
-      if (!navigator.onLine) return;
+    async function refresh(force = false) {
+      if (
+        !force &&
+        Date.now() - lastRefreshStartedAt < FOCUS_REFRESH_INTERVAL_MS
+      ) {
+        return;
+      }
+      if (refreshInFlight) return refreshInFlight;
+
+      lastRefreshStartedAt = Date.now();
+      refreshInFlight = (async () => {
+        setOnline(navigator.onLine);
+        await loadLastSync();
+        if (!navigator.onLine) return;
+
+        try {
+          const syncedAt = await refreshOfflineSnapshots();
+          if (!cancelled) setLastSyncedAt(syncedAt);
+        } catch {
+          // Snapshot refresh is a convenience cache; live admin pages keep using
+          // server data and should not be blocked by cache refresh failures.
+        }
+      })();
 
       try {
-        const syncedAt = await refreshOfflineSnapshots();
-        if (!cancelled) setLastSyncedAt(syncedAt);
-      } catch {
-        // Snapshot refresh is a convenience cache; live admin pages keep using
-        // server data and should not be blocked by cache refresh failures.
+        await refreshInFlight;
+      } finally {
+        refreshInFlight = null;
       }
     }
 
-    void refresh();
+    void refresh(true);
 
-    const onOnline = () => void refresh();
+    const onOnline = () => void refresh(true);
     const onOffline = () => {
       setOnline(false);
       void loadLastSync();
     };
-    const onFocus = () => void refresh();
+    const onFocus = () => void refresh(false);
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === OFFLINE_ACCESS_STORAGE_KEY &&
+        event.newValue === OFFLINE_ACCESS_LOCKED_VALUE
+      ) {
+        window.location.replace(
+          navigator.onLine
+            ? "/login?message=Signed%20out%20on%20another%20tab."
+            : "/offline?signedOut=1"
+        );
+      }
+    };
 
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("storage", onStorage);
 
     return () => {
       cancelled = true;
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

@@ -2,6 +2,10 @@ import "server-only";
 
 import { cache } from "react";
 import { cookies } from "next/headers";
+import {
+  ADMIN_LOGOUT_PENDING_COOKIE_NAME,
+  ADMIN_SESSION_COOKIE_NAME
+} from "@/lib/auth/constants";
 import { getSql } from "@/lib/db/client";
 
 export type AdminRole = "staff" | "admin" | "superadmin";
@@ -14,7 +18,6 @@ export type AdminSession = {
   role: AdminRole;
 };
 
-const SESSION_COOKIE_NAME = "mcr_admin_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 const SESSION_TOKEN_BYTES = 32;
 
@@ -70,7 +73,8 @@ export async function createAdminSession(userId: string) {
     where expires_at <= now()
   `;
 
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
+  cookieStore.delete(ADMIN_LOGOUT_PENDING_COOKIE_NAME);
+  cookieStore.set(ADMIN_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -84,7 +88,23 @@ export async function createAdminSession(userId: string) {
 // re-querying the session.
 export const getCurrentAdminSession = cache(async (): Promise<AdminSession | null> => {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  const token = cookieStore.get(ADMIN_SESSION_COOKIE_NAME)?.value;
+
+  // A user can sign out while the PWA is offline. The browser cannot call the
+  // server action in that state, so the client leaves this same-origin marker.
+  // On the next network request we reject and revoke the old server session.
+  // The marker is intentionally only capable of signing this browser out.
+  if (cookieStore.get(ADMIN_LOGOUT_PENDING_COOKIE_NAME)?.value === "1") {
+    if (token) {
+      const tokenHash = await hashSessionToken(token);
+      const sql = getSql();
+      await sql`
+        delete from admin_sessions
+        where token_hash = ${tokenHash}
+      `;
+    }
+    return null;
+  }
 
   if (!token) {
     return null;
@@ -123,7 +143,7 @@ export const getCurrentAdminSession = cache(async (): Promise<AdminSession | nul
 
 export async function destroyCurrentAdminSession() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  const token = cookieStore.get(ADMIN_SESSION_COOKIE_NAME)?.value;
 
   if (token) {
     const tokenHash = await hashSessionToken(token);
@@ -134,5 +154,6 @@ export async function destroyCurrentAdminSession() {
     `;
   }
 
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  cookieStore.delete(ADMIN_SESSION_COOKIE_NAME);
+  cookieStore.delete(ADMIN_LOGOUT_PENDING_COOKIE_NAME);
 }

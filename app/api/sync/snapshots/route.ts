@@ -23,10 +23,16 @@ function toNumber<T extends Record<string, unknown>>(row: T, keys: (keyof T)[]):
   return next;
 }
 
+async function offlineSessionEpoch(sessionId: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`mcr-offline:${sessionId}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function POST(request: NextRequest) {
   try {
     assertSameOriginRequest(request);
-    await requireApprovedAdminRole();
+    const session = await requireApprovedAdminRole();
 
     const sql = getSql();
 
@@ -212,6 +218,10 @@ export async function POST(request: NextRequest) {
     const generatedAt = String((generatedRows as { generated_at: string }[])[0]?.generated_at ?? new Date().toISOString());
 
     const body: OfflineSnapshotPayload = {
+      offline_identity: {
+        user_id: session.userId,
+        session_epoch: await offlineSessionEpoch(session.sessionId)
+      },
       generated_at: generatedAt,
       bookings: (bookingRows as BookingSnapshot[]).map((row) => toNumber(row, ["balance_due"])),
       room_types: (roomTypeRows as RoomTypeSnapshot[]).map((row) => toNumber(row, ["inventory_count"])),

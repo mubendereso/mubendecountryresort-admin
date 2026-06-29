@@ -59,6 +59,10 @@ export type RoomUnitSnapshot = {
 };
 
 export type OfflineSnapshotPayload = {
+  offline_identity: {
+    user_id: string;
+    session_epoch: string;
+  };
   generated_at: string;
   bookings: BookingSnapshot[];
   room_types: RoomTypeSnapshot[];
@@ -68,6 +72,6 @@ export type OfflineSnapshotPayload = {
   room_units: RoomUnitSnapshot[];
 };
 
-export type OfflineSnapshotData = OfflineSnapshotPayload & {
+export type OfflineSnapshotData = Omit<OfflineSnapshotPayload, "offline_identity"> & {
   last_synced_at: string | null;
 };

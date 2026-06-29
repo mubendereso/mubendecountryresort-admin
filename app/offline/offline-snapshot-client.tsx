@@ -5,6 +5,12 @@ import {
   getOfflineSnapshotData,
   refreshOfflineSnapshots
 } from "@/lib/offline-snapshots/client";
+import { SecureSignOutButton } from "@/components/secure-sign-out-button";
+import { OfflineAccessLockedError } from "@/lib/local-db/security";
+import {
+  OFFLINE_ACCESS_LOCKED_VALUE,
+  OFFLINE_ACCESS_STORAGE_KEY
+} from "@/lib/local-db/security-policy";
 import type {
   BookingSnapshot,
   OfflineSnapshotData,
@@ -362,22 +368,38 @@ function RoomsSnapshot({ data }: { data: OfflineSnapshotData }) {
 
 export function OfflineSnapshotClient() {
   const [data, setData] = useState<OfflineSnapshotData | null>(null);
+  const [accessLocked, setAccessLocked] = useState(false);
   const [tab, setTab] = useState<Tab>("front-desk");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const today = useMemo(todayIsoKampala, []);
 
-  async function loadCachedData() {
-    const cached = await getOfflineSnapshotData();
-    setData(cached);
+  async function loadCachedData(): Promise<boolean> {
+    try {
+      const cached = await getOfflineSnapshotData();
+      setData(cached);
+      setAccessLocked(false);
+      return true;
+    } catch (error) {
+      if (error instanceof OfflineAccessLockedError) {
+        setData(null);
+        setAccessLocked(true);
+        return false;
+      }
+      throw error;
+    }
   }
 
   async function refresh() {
     setMessage(null);
     if (!navigator.onLine) {
-      setMessage("Offline Mode: using the last cached snapshot. Data may be outdated.");
-      await loadCachedData();
+      const available = await loadCachedData();
+      setMessage(
+        available
+          ? "Offline Mode: using the last cached snapshot. Data may be outdated."
+          : "Offline data is locked. Sign in while online to enable it."
+      );
       return;
     }
     try {
@@ -395,6 +417,9 @@ export function OfflineSnapshotClient() {
     if (new URLSearchParams(window.location.search).get("tab") === "maintenance") {
       setTab("maintenance");
     }
+    if (new URLSearchParams(window.location.search).get("signedOut") === "1") {
+      setMessage("Signed out on this device. Offline data was erased.");
+    }
     (async () => {
       try {
         await loadCachedData();
@@ -404,8 +429,20 @@ export function OfflineSnapshotClient() {
         if (!cancelled) setLoading(false);
       }
     })();
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === OFFLINE_ACCESS_STORAGE_KEY &&
+        event.newValue === OFFLINE_ACCESS_LOCKED_VALUE
+      ) {
+        setData(null);
+        setAccessLocked(true);
+        setMessage("Signed out on this device. Offline data was erased.");
+      }
+    };
+    window.addEventListener("storage", onStorage);
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
@@ -417,6 +454,39 @@ export function OfflineSnapshotClient() {
     { key: "rooms", label: "Rooms" },
     { key: "maintenance", label: "Maintenance" }
   ];
+
+  if (accessLocked) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-canvas-light px-4 py-10 text-[#2a241a]">
+        <section className="surface-card w-full max-w-lg rounded-[32px] px-6 py-8 text-center sm:px-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-bronze-500">
+            Mubende Country Resort
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold">Offline data is locked</h1>
+          <p className="mt-4 text-sm leading-6 text-oliveMuted-600">
+            No guest, payment, or maintenance records are available after sign-out.
+            Sign in while online, then refresh to prepare this device for offline use.
+          </p>
+          {message ? <p className="mt-4 text-sm text-oliveMuted-700">{message}</p> : null}
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="rounded-md bg-oliveMuted-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-oliveMuted-500"
+            >
+              Enable after sign-in
+            </button>
+            <a
+              href="/login"
+              className="rounded-md border border-stoneWarm-300 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-700 transition hover:bg-stoneWarm-100"
+            >
+              Go to sign in
+            </a>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-canvas-light px-4 py-6 text-[#2a241a] sm:px-6 lg:px-8">
@@ -432,13 +502,24 @@ export function OfflineSnapshotClient() {
                 Cached front-desk data is read-only. Maintenance work can be saved offline and queued for sync.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              className="rounded-md border border-stoneWarm-300 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-700 transition hover:bg-stoneWarm-100"
-            >
-              Refresh snapshot
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="rounded-md border border-stoneWarm-300 bg-white px-4 py-2 text-sm font-semibold text-oliveMuted-700 transition hover:bg-stoneWarm-100"
+              >
+                Refresh snapshot
+              </button>
+              <SecureSignOutButton
+                label="Sign out and clear device"
+                onLocalSignedOut={() => {
+                  setData(null);
+                  setAccessLocked(true);
+                  setMessage("Signed out on this device. Offline data was erased.");
+                }}
+                className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+              />
+            </div>
           </div>
           <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <strong>Offline Snapshot</strong>

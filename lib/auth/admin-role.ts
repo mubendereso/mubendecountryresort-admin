@@ -15,6 +15,7 @@ export class AdminAuthorizationError extends Error {
 }
 
 export async function requireApprovedAdminRole(): Promise<{
+  sessionId: string;
   userId: string;
   email: string | null;
   role: AdminRole;
@@ -33,6 +34,7 @@ export async function requireApprovedAdminRole(): Promise<{
   }
 
   return {
+    sessionId: session.sessionId,
     userId: session.userId,
     email: session.email,
     role: session.role

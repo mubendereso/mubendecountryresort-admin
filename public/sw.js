@@ -13,7 +13,7 @@
 //
 // Bump CACHE_VERSION to force clients to evict old caches on next activate.
 
-const CACHE_VERSION = "mcr-admin-v6";
+const CACHE_VERSION = "mcr-admin-v7";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 

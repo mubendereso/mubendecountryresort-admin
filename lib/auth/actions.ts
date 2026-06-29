@@ -100,5 +100,4 @@ export async function signInWithPasswordAction(formData: FormData) {
 
 export async function signOutAction() {
   await destroyCurrentAdminSession();
-  redirect("/login?message=Signed out.");
 }

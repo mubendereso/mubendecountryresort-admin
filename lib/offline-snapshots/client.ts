@@ -2,6 +2,12 @@
 
 import { getLocalDb } from "@/lib/local-db/client";
 import type { SqlParam } from "@/lib/local-db/protocol";
+import {
+  assertOfflineAccess,
+  prepareOfflineSnapshotSession,
+  unlockOfflineAccess,
+  writeOfflineIdentity
+} from "@/lib/local-db/security";
 import type {
   BookingSnapshot,
   FolioSnapshot,
@@ -64,6 +70,7 @@ function asRoomUnitRows(rows: RoomUnitSnapshot[]): Record<string, SqlParam>[] {
 }
 
 export async function storeOfflineSnapshots(payload: OfflineSnapshotPayload): Promise<void> {
+  await prepareOfflineSnapshotSession(payload.offline_identity);
   const db = getLocalDb();
   await db.exec("BEGIN");
   try {
@@ -135,7 +142,9 @@ export async function storeOfflineSnapshots(payload: OfflineSnapshotPayload): Pr
          updated_at = excluded.updated_at`,
       [payload.generated_at]
     );
+    await writeOfflineIdentity(payload.offline_identity);
     await db.exec("COMMIT");
+    unlockOfflineAccess(payload.offline_identity);
   } catch (error) {
     await db.exec("ROLLBACK").catch(() => undefined);
     throw error;
@@ -167,6 +176,7 @@ export async function getOfflineLastSyncedAt(): Promise<string | null> {
 }
 
 export async function getOfflineSnapshotData(): Promise<OfflineSnapshotData> {
+  await assertOfflineAccess();
   const db = getLocalDb();
   const [
     last_synced_at,

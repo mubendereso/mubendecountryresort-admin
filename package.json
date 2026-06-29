@@ -10,6 +10,7 @@
     "deploy": "npm run build:cf && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
+    "test:offline-security": "node --test tests/offline-security.test.mjs",
     "admin:create-user": "node scripts/create-admin-user.mjs",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/copy-sqlite-wasm.mjs"
