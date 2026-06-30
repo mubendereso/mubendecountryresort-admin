@@ -65,7 +65,8 @@ function runSecretBulk(secrets) {
       {
         cwd: storefrontPath,
         stdio: ["pipe", "inherit", "inherit"],
-        windowsHide: true
+        windowsHide: true,
+        shell: process.platform === "win32"
       }
     );
     child.once("error", reject);
