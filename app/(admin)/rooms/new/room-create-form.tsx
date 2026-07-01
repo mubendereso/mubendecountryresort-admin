@@ -100,13 +100,17 @@ export function RoomCreateForm() {
     };
   }, [galleryFiles]);
 
-  function resetFormState() {
+  function clearGallerySelection() {
     formRef.current?.reset();
     setGalleryFiles([]);
     setGalleryPreviews([]);
-    setPhotoError(null);
     setUploadProgress(null);
     syncFileInput(galleryInputRef.current, []);
+  }
+
+  function resetFormState() {
+    clearGallerySelection();
+    setPhotoError(null);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -136,28 +140,40 @@ export function RoomCreateForm() {
     }
 
     void (async () => {
+      const failures: string[] = [];
+      let uploadedCount = 0;
+
       try {
         for (let index = 0; index < galleryFiles.length; index += 1) {
           const file = galleryFiles[index];
           setUploadProgress(`Uploading ${index + 1} of ${galleryFiles.length}: ${file.name}`);
 
-          const processed = await shrinkImage(file);
-          if (processed.size > MAX_BYTES) {
-            throw new Error(
-              `"${file.name}" is too large even after compression. Try a smaller photo.`
-            );
-          }
+          try {
+            const processed = await shrinkImage(file);
+            if (processed.size > MAX_BYTES) {
+              throw new Error(
+                `"${file.name}" is too large even after compression. Try a smaller photo.`
+              );
+            }
 
-          const uploadForm = new FormData();
-          uploadForm.set("id", createdId);
-          uploadForm.set("slug", createdSlug);
-          uploadForm.set("image", processed);
-          await uploadRoomGalleryImageAction(uploadForm);
+            const uploadForm = new FormData();
+            uploadForm.set("id", createdId);
+            uploadForm.set("slug", createdSlug);
+            uploadForm.set("image", processed);
+            await uploadRoomGalleryImageAction(uploadForm);
+            uploadedCount += 1;
+          } catch (error) {
+            failures.push(`${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`);
+          }
         }
 
-        resetFormState();
+        clearGallerySelection();
+        if (failures.length > 0) {
+          const failureSummary = failures.length === 1 ? failures[0] : `${failures[0]} (+${failures.length - 1} more)`;
+          setPhotoError(`Uploaded ${uploadedCount} of ${galleryFiles.length} images. ${failureSummary}`);
+        }
       } catch (error) {
-        resetFormState();
+        clearGallerySelection();
         setPhotoError(error instanceof Error ? error.message : "Upload failed.");
       } finally {
         uploadStartedForRef.current = null;
