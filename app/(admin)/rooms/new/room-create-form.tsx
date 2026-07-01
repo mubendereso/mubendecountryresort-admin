@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
 import { shrinkImage } from "@/lib/images/shrink-image";
-import { createRoomTypeAction, uploadRoomGalleryImageAction, type CreateRoomTypeState } from "@/lib/rooms/actions";
+import { createRoomTypeAction, type CreateRoomTypeState } from "@/lib/rooms/actions";
+import { uploadRoomGalleryImage } from "@/lib/rooms/upload-gallery-image";
 
 const MAX_GALLERY_IMAGES = 15;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -77,11 +79,13 @@ function syncFileInput(input: HTMLInputElement | null, files: File[]) {
 }
 
 export function RoomCreateForm() {
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [uploadFailures, setUploadFailures] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [state, formAction, isPending] = useActionState(
     createRoomTypeAction,
@@ -111,11 +115,13 @@ export function RoomCreateForm() {
   function resetFormState() {
     clearGallerySelection();
     setPhotoError(null);
+    setUploadFailures([]);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPhotoError(null);
+    setUploadFailures([]);
 
     const formData = new FormData(event.currentTarget);
     formData.delete("gallery_images");
@@ -135,7 +141,9 @@ export function RoomCreateForm() {
 
     if (galleryFiles.length === 0) {
       resetFormState();
-      uploadStartedForRef.current = null;
+      router.replace(
+        `/rooms/${createdSlug}?message=${encodeURIComponent("Room type created.")}`
+      );
       return;
     }
 
@@ -146,7 +154,8 @@ export function RoomCreateForm() {
       try {
         for (let index = 0; index < galleryFiles.length; index += 1) {
           const file = galleryFiles[index];
-          setUploadProgress(`Uploading ${index + 1} of ${galleryFiles.length}: ${file.name}`);
+          let stage = "preparing";
+          setUploadProgress(`Preparing ${index + 1} of ${galleryFiles.length}: ${file.name}`);
 
           try {
             const processed = await shrinkImage(file);
@@ -156,30 +165,38 @@ export function RoomCreateForm() {
               );
             }
 
-            const uploadForm = new FormData();
-            uploadForm.set("id", createdId);
-            uploadForm.set("slug", createdSlug);
-            uploadForm.set("image", processed);
-            await uploadRoomGalleryImageAction(uploadForm);
+            stage = "uploading";
+            setUploadProgress(`Uploading ${index + 1} of ${galleryFiles.length}: ${file.name}`);
+            await uploadRoomGalleryImage({
+              roomId: createdId,
+              slug: createdSlug,
+              image: processed
+            });
             uploadedCount += 1;
           } catch (error) {
-            failures.push(`${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`);
+            failures.push(
+              `${file.name} (${stage}): ${error instanceof Error ? error.message : "Upload failed."}`
+            );
           }
         }
 
         clearGallerySelection();
         if (failures.length > 0) {
-          const failureSummary = failures.length === 1 ? failures[0] : `${failures[0]} (+${failures.length - 1} more)`;
-          setPhotoError(`Uploaded ${uploadedCount} of ${galleryFiles.length} images. ${failureSummary}`);
+          setPhotoError(`Uploaded ${uploadedCount} of ${galleryFiles.length} images.`);
+          setUploadFailures(failures);
+        } else {
+          router.replace(
+            `/rooms/${createdSlug}?message=${encodeURIComponent(
+              `Room type created with ${uploadedCount} image${uploadedCount === 1 ? "" : "s"}.`
+            )}`
+          );
         }
       } catch (error) {
         clearGallerySelection();
         setPhotoError(error instanceof Error ? error.message : "Upload failed.");
-      } finally {
-        uploadStartedForRef.current = null;
       }
     })();
-  }, [galleryFiles, state.createdId, state.createdSlug, state.status]);
+  }, [galleryFiles, router, state.createdId, state.createdSlug, state.status]);
 
   function updateGalleryFiles(files: File[]) {
     if (files.length > MAX_GALLERY_IMAGES) {
@@ -187,6 +204,7 @@ export function RoomCreateForm() {
       return;
     }
     setPhotoError(null);
+    setUploadFailures([]);
     setGalleryFiles(files);
     syncFileInput(galleryInputRef.current, files);
   }
@@ -281,6 +299,13 @@ export function RoomCreateForm() {
               : `Select up to ${MAX_GALLERY_IMAGES - galleryFiles.length} image${MAX_GALLERY_IMAGES - galleryFiles.length === 1 ? "" : "s"} at once. Large photos are resized automatically before upload.`}
           </p>
           {photoError ? <p className="text-xs font-semibold text-red-600">{photoError}</p> : null}
+          {uploadFailures.length > 0 ? (
+            <ul className="grid gap-1 text-xs text-red-600">
+              {uploadFailures.map((failure) => (
+                <li key={failure}>{failure}</li>
+              ))}
+            </ul>
+          ) : null}
           {uploadProgress ? <p className="text-xs font-semibold text-oliveMuted-600">{uploadProgress}</p> : null}
           {galleryFiles.length > 0 && !uploadProgress ? (
             <p className="text-xs text-oliveMuted-500">Images will upload one at a time after you create the room.</p>

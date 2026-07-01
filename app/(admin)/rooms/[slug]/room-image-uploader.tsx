@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { shrinkImage } from "@/lib/images/shrink-image";
-import { uploadRoomGalleryImageAction } from "@/lib/rooms/actions";
+import { uploadRoomGalleryImage } from "@/lib/rooms/upload-gallery-image";
 
 const MAX_GALLERY_IMAGES = 15;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -43,27 +43,45 @@ export function RoomImageUploader({
     }
 
     startTransition(async () => {
+      const failures: string[] = [];
+      const failedFiles: File[] = [];
+
       try {
         for (let i = 0; i < selectedFiles.length; i++) {
           const file = selectedFiles[i];
-          setProgress(`Uploading ${i + 1} of ${selectedFiles.length}...`);
+          let stage = "preparing";
+          setProgress(`Preparing ${i + 1} of ${selectedFiles.length}: ${file.name}`);
 
-          const processed = await shrinkImage(file);
-          if (processed.size > MAX_BYTES) {
-            throw new Error(
-              `"${file.name}" is too large even after compression. Try a smaller photo.`
+          try {
+            const processed = await shrinkImage(file);
+            if (processed.size > MAX_BYTES) {
+              throw new Error(
+                `"${file.name}" is too large even after compression. Try a smaller photo.`
+              );
+            }
+
+            stage = "uploading";
+            setProgress(`Uploading ${i + 1} of ${selectedFiles.length}: ${file.name}`);
+            await uploadRoomGalleryImage({ roomId, slug, image: processed });
+          } catch (uploadError) {
+            failedFiles.push(file);
+            failures.push(
+              `${file.name} (${stage}): ${
+                uploadError instanceof Error ? uploadError.message : "Upload failed."
+              }`
             );
           }
-
-          const formData = new FormData();
-          formData.set("id", roomId);
-          formData.set("slug", slug);
-          formData.set("image", processed);
-          await uploadRoomGalleryImageAction(formData);
         }
 
-        if (fileRef.current) fileRef.current.value = "";
-        setSelectedFiles([]);
+        if (failures.length > 0) {
+          setSelectedFiles(failedFiles);
+          setError(
+            `Uploaded ${selectedFiles.length - failures.length} of ${selectedFiles.length}. ${failures.join(" ")}`
+          );
+        } else {
+          if (fileRef.current) fileRef.current.value = "";
+          setSelectedFiles([]);
+        }
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed.");

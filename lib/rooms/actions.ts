@@ -10,8 +10,6 @@ import { textareaToList } from "@/lib/rooms/format";
 import { ImageUploadError, uploadImageFile } from "@/lib/storage/image-upload";
 import { deleteObject, keyFromPublicUrl } from "@/lib/storage/r2";
 
-// Maximum number of gallery images per room.
-const MAX_GALLERY_IMAGES = 15;
 const MAX_SLUG_LENGTH = 120;
 const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 500;
@@ -863,67 +861,6 @@ export async function uploadRoomCoverAction(formData: FormData) {
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${slug}`);
   redirect(`/rooms/${slug}?message=${encodeURIComponent("Cover image updated.")}`);
-}
-
-// Appends a single uploaded image to a room's gallery. Called once per file by
-// the client (sequentially) so large multi-image selections don't exceed the
-// server action body limit. Throws on error; the client surfaces the message.
-export async function uploadRoomGalleryImageAction(formData: FormData): Promise<void> {
-  const session = await requireContentManager();
-
-  const id = formData.get("id");
-  const slug = formData.get("slug");
-  if (typeof id !== "string" || typeof slug !== "string" || !id || !slug) {
-    throw new Error("Invalid upload request.");
-  }
-
-  const file = formData.get("image");
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("Choose an image to upload.");
-  }
-
-  const sql = getSql();
-  const rows = (await sql`
-    select coalesce(array_length(gallery, 1), 0)::int as count from room_types where id = ${id}
-  `) as { count: number }[];
-  const current = rows[0]?.count ?? 0;
-  if (current >= MAX_GALLERY_IMAGES) {
-    throw new Error(`Gallery is full (max ${MAX_GALLERY_IMAGES} images). Remove one first.`);
-  }
-
-  let url: string;
-  try {
-    ({ url } = await uploadImageFile(file, `rooms/${slug}/gallery`));
-  } catch (error) {
-    throw error instanceof ImageUploadError ? error : new Error("Image upload failed.");
-  }
-
-  const updated = (await sql`
-    update room_types
-    set gallery = array_append(gallery, ${url})
-    where id = ${id}
-    returning id::text, title, slug
-  `) as { id: string; title: string; slug: string }[];
-
-  const room = updated[0];
-  if (room) {
-    await recordAuditLog({
-      actorId: session.userId,
-      actorEmail: session.email,
-      action: "room_type.gallery_image_added",
-      entityType: "room_type",
-      entityId: room.id,
-      summary: `Added gallery image to ${room.title}.`,
-      context: {
-        roomTypeId: room.id,
-        slug: room.slug,
-        imageUrl: url
-      }
-    });
-  }
-
-  revalidatePath("/rooms");
-  revalidatePath(`/rooms/${slug}`);
 }
 
 // Removes one image URL from a room's gallery and best-effort deletes the
