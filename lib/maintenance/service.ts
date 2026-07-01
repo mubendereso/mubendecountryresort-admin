@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AdminRole } from "@/lib/auth/session";
 import { getSql } from "@/lib/db/client";
+import type { SqlTag } from "@/lib/db/sql";
 import type { AuditEntry } from "@/lib/sync/mutations";
 import type { MaintenanceCategory, MaintenancePriority, MaintenanceStatus } from "./types";
 
@@ -34,13 +35,12 @@ function isManager(role: AdminRole): boolean {
   return role === "admin" || role === "superadmin";
 }
 
-async function getWorkOrder(id: string): Promise<WorkOrderState | null> {
-  const sql = getSql();
+async function getWorkOrder(id: string, sql: SqlTag = getSql()): Promise<WorkOrderState | null> {
   const rows = (await sql`SELECT id::text, work_order_number, status, assigned_to::text, title FROM maintenance_work_orders WHERE id=${id}::uuid LIMIT 1`) as WorkOrderState[];
   return rows[0] ?? null;
 }
 
-export async function createMaintenanceRecord(input: CreateMaintenanceInput, actor: MaintenanceActor): Promise<{ id: string; number: string; audit: AuditEntry }> {
+export async function createMaintenanceRecord(input: CreateMaintenanceInput, actor: MaintenanceActor, sql: SqlTag = getSql()): Promise<{ id: string; number: string; audit: AuditEntry }> {
   if (input.assignedTo && !isManager(actor.role)) throw new Error("Only admin or superadmin can assign work orders.");
   const manager = isManager(actor.role);
   const assignedTo = manager ? input.assignedTo : null;
@@ -50,7 +50,6 @@ export async function createMaintenanceRecord(input: CreateMaintenanceInput, act
   const estimatedCostUgx = manager ? input.estimatedCostUgx : null;
   const workOrderId = input.id ?? crypto.randomUUID();
   const activityId = actor.activityId ?? crypto.randomUUID();
-  const sql = getSql();
   const rows = (await sql`
     WITH created AS (
       INSERT INTO maintenance_work_orders (
@@ -90,13 +89,12 @@ export async function editMaintenanceRecord(input: {
   scheduledFor: string | null;
   expectedReturnAt: string | null;
   estimatedCostUgx: number | null;
-}, actor: MaintenanceActor): Promise<AuditEntry> {
-  const before = await getWorkOrder(input.id);
+}, actor: MaintenanceActor, sql: SqlTag = getSql()): Promise<AuditEntry> {
+  const before = await getWorkOrder(input.id, sql);
   if (!before) throw new Error("Work order not found.");
   if (["completed", "cancelled"].includes(before.status)) throw new Error("Closed work orders cannot be edited.");
   const manager = isManager(actor.role);
   const activityId = actor.activityId ?? crypto.randomUUID();
-  const sql = getSql();
   await sql`
     WITH updated AS (
       UPDATE maintenance_work_orders SET
@@ -113,14 +111,13 @@ export async function editMaintenanceRecord(input: {
   return { action: "maintenance.edited", entityType: "maintenance_work_order", entityId: input.id, summary: `Updated work order ${before.work_order_number}.`, context: input };
 }
 
-export async function assignMaintenanceRecord(id: string, assignedTo: string | null, note: string | null, actor: MaintenanceActor): Promise<AuditEntry> {
+export async function assignMaintenanceRecord(id: string, assignedTo: string | null, note: string | null, actor: MaintenanceActor, sql: SqlTag = getSql()): Promise<AuditEntry> {
   if (!isManager(actor.role)) throw new Error("Only admin or superadmin can assign work orders.");
-  const before = await getWorkOrder(id);
+  const before = await getWorkOrder(id, sql);
   if (!before) throw new Error("Work order not found.");
   if (["completed", "cancelled"].includes(before.status)) throw new Error("Closed work orders cannot be assigned.");
   const nextStatus: MaintenanceStatus = assignedTo ? (before.status === "open" ? "assigned" : before.status) : "open";
   const activityId = actor.activityId ?? crypto.randomUUID();
-  const sql = getSql();
   await sql`
     WITH updated AS (
       UPDATE maintenance_work_orders SET assigned_to=${assignedTo}::uuid, status=${nextStatus}
@@ -148,8 +145,8 @@ export async function changeMaintenanceStatus(input: {
   note: string | null;
   resolutionNotes: string | null;
   actualCostUgx: number | null;
-}, actor: MaintenanceActor): Promise<AuditEntry> {
-  const before = await getWorkOrder(input.id);
+}, actor: MaintenanceActor, sql: SqlTag = getSql()): Promise<AuditEntry> {
+  const before = await getWorkOrder(input.id, sql);
   if (!before) throw new Error("Work order not found.");
   if (!ALLOWED_TRANSITIONS[before.status].includes(input.status)) throw new Error(`Cannot move a ${before.status.replaceAll("_", " ")} work order to ${input.status.replaceAll("_", " ")}.`);
   const manager = isManager(actor.role);
@@ -158,7 +155,6 @@ export async function changeMaintenanceStatus(input: {
   if (input.status === "completed" && !input.resolutionNotes?.trim()) throw new Error("Resolution notes are required to complete a work order.");
   const action = input.status === "completed" ? "completed" : input.status === "cancelled" ? "cancelled" : `status_${input.status}`;
   const activityId = actor.activityId ?? crypto.randomUUID();
-  const sql = getSql();
   await sql`
     WITH updated AS (
       UPDATE maintenance_work_orders SET
@@ -175,10 +171,9 @@ export async function changeMaintenanceStatus(input: {
   return { action: `maintenance.${action}`, entityType: "maintenance_work_order", entityId: input.id, summary: `Changed ${before.work_order_number} from ${before.status.replaceAll("_", " ")} to ${input.status.replaceAll("_", " ")}.`, context: { previousStatus: before.status, newStatus: input.status, note: input.note, resolutionNotes: input.resolutionNotes, actualCostUgx: input.actualCostUgx } };
 }
 
-export async function addMaintenanceNote(id: string, note: string, actor: MaintenanceActor): Promise<AuditEntry> {
-  const before = await getWorkOrder(id);
+export async function addMaintenanceNote(id: string, note: string, actor: MaintenanceActor, sql: SqlTag = getSql()): Promise<AuditEntry> {
+  const before = await getWorkOrder(id, sql);
   if (!before) throw new Error("Work order not found.");
-  const sql = getSql();
   const activityId = actor.activityId ?? crypto.randomUUID();
   await sql`INSERT INTO maintenance_activity (id, work_order_id, actor, action, previous_status, new_status, notes) VALUES (${activityId}::uuid, ${id}::uuid, ${actor.userId}::uuid, 'note_added', ${before.status}, ${before.status}, ${note})`;
   return { action: "maintenance.note_added", entityType: "maintenance_work_order", entityId: id, summary: `Added a note to ${before.work_order_number}.`, context: { note } };

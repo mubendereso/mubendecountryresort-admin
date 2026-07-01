@@ -22,9 +22,17 @@ import type {
 } from "./protocol";
 
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
+const OUTBOX_CLAIM_TTL_MS = 5 * 60 * 1000;
+const OUTBOX_BATCH_LIMIT = 100;
+const OUTBOX_BYTE_LIMIT = 1_800_000;
+type LocalDbLike = ReturnType<typeof getLocalDb>;
 
 function newKey(): string {
   return crypto.randomUUID();
+}
+
+function isoFromNow(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toISOString();
 }
 
 /**
@@ -46,6 +54,18 @@ export async function enqueueMutation(
   );
   return key;
 }
+
+type ClaimedOutboxRow = {
+  idempotency_key: string;
+  mutation_type: string;
+  payload: string;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  claim_token: string | null;
+  claimed_at: string | null;
+};
 
 function normalizeValue(value: unknown): string | number | null {
   if (value === null || value === undefined) return null;
@@ -116,20 +136,83 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Drain pending outbox rows to the server. */
-export async function pushOutbox(): Promise<{ pushed: number; failed: number }> {
-  const db = getLocalDb();
-  const pending = await db.query<{
-    idempotency_key: string;
-    mutation_type: string;
-    payload: string;
-  }>(
-    `SELECT idempotency_key, mutation_type, payload
-     FROM _outbox
-     WHERE status != 'syncing'
-     ORDER BY created_at
-     LIMIT 100`
+async function claimOutboxRows(
+  db: LocalDbLike = getLocalDb()
+): Promise<{ claimToken: string; rows: ClaimedOutboxRow[] }> {
+  const claimToken = crypto.randomUUID();
+  const claimTime = isoFromNow();
+  const reclaimBefore = isoFromNow(-OUTBOX_CLAIM_TTL_MS);
+  const rows = await db.query<ClaimedOutboxRow>(
+    `UPDATE _outbox
+     SET status = 'syncing',
+         claim_token = ?,
+         claimed_at = ?
+     WHERE idempotency_key IN (
+       SELECT idempotency_key
+       FROM _outbox
+       WHERE status IN ('pending', 'failed')
+          OR (status = 'syncing' AND claimed_at IS NOT NULL AND claimed_at < ?)
+       ORDER BY created_at
+       LIMIT ?
+     )
+     RETURNING idempotency_key, mutation_type, payload, status, attempts, last_error, created_at, claim_token, claimed_at`,
+    [claimToken, claimTime, reclaimBefore, OUTBOX_BATCH_LIMIT]
   );
+  rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return { claimToken, rows };
+}
+
+async function markClaimFailure(
+  claimToken: string,
+  idempotencyKey: string,
+  error: string,
+  db: LocalDbLike = getLocalDb()
+): Promise<void> {
+  await db.exec(
+    `UPDATE _outbox
+     SET status = 'failed',
+         attempts = attempts + 1,
+         last_error = ?,
+         last_attempt_at = ${NOW_SQL},
+         claim_token = NULL,
+         claimed_at = NULL
+     WHERE idempotency_key = ? AND claim_token = ?`,
+    [error, idempotencyKey, claimToken]
+  );
+}
+
+async function deleteClaimedRow(
+  claimToken: string,
+  idempotencyKey: string,
+  db: LocalDbLike = getLocalDb()
+): Promise<void> {
+  await db.exec("DELETE FROM _outbox WHERE idempotency_key = ? AND claim_token = ?", [
+    idempotencyKey,
+    claimToken
+  ]);
+}
+
+async function requeueClaimedRows(
+  claimToken: string,
+  idempotencyKeys: string[],
+  db: LocalDbLike = getLocalDb()
+): Promise<void> {
+  if (idempotencyKeys.length === 0) return;
+  await db.exec(
+    `UPDATE _outbox
+     SET status = 'pending',
+         claim_token = NULL,
+         claimed_at = NULL
+     WHERE claim_token = ? AND idempotency_key IN (${idempotencyKeys.map(() => "?").join(", ")})`,
+    [claimToken, ...idempotencyKeys]
+  );
+}
+
+/** Drain pending outbox rows to the server. */
+export async function pushOutbox(
+  db: LocalDbLike = getLocalDb()
+): Promise<{ pushed: number; failed: number }> {
+  const { claimToken, rows: pending } = await claimOutboxRows(db);
   if (pending.length === 0) return { pushed: 0, failed: 0 };
 
   const mutations: QueuedMutation[] = [];
@@ -141,34 +224,35 @@ export async function pushOutbox(): Promise<{ pushed: number; failed: number }> 
       payload: JSON.parse(row.payload) as Record<string, unknown>
     };
     const nextBytes = JSON.stringify(next).length;
-    if (mutations.length > 0 && estimatedBytes + nextBytes > 1_800_000) break;
+    if (mutations.length > 0 && estimatedBytes + nextBytes > OUTBOX_BYTE_LIMIT) break;
     mutations.push(next);
     estimatedBytes += nextBytes;
   }
 
-  const data = await postJson<PushResponse>("/api/sync/push", {
-    mutations
-  } satisfies PushRequest);
+  if (mutations.length < pending.length) {
+    await requeueClaimedRows(
+      claimToken,
+      pending.slice(mutations.length).map((row) => row.idempotency_key),
+      db
+    );
+  }
+
+  const data = await postJson<PushResponse>("/api/sync/push", { mutations } satisfies PushRequest);
 
   let pushed = 0;
   let failed = 0;
   for (const result of data.results) {
     if (result.ok) {
-      await db.exec("DELETE FROM _outbox WHERE idempotency_key = ?", [result.idempotencyKey]);
+      await deleteClaimedRow(claimToken, result.idempotencyKey, db);
       pushed += 1;
     } else if (!result.retryable) {
       // Permanent failure (validation / permission). Drop it so it stops
       // blocking the queue; surface via last_error before deletion would be
       // nicer, but for now the engine just discards.
-      await db.exec("DELETE FROM _outbox WHERE idempotency_key = ?", [result.idempotencyKey]);
+      await deleteClaimedRow(claimToken, result.idempotencyKey, db);
       failed += 1;
     } else {
-      await db.exec(
-        `UPDATE _outbox
-         SET attempts = attempts + 1, last_error = ?, last_attempt_at = ${NOW_SQL}
-         WHERE idempotency_key = ?`,
-        [result.error, result.idempotencyKey]
-      );
+      await markClaimFailure(claimToken, result.idempotencyKey, result.error, db);
       failed += 1;
     }
   }
@@ -227,3 +311,5 @@ export async function listOutbox(): Promise<OutboxRow[]> {
 }
 
 export type { ExecResult };
+
+

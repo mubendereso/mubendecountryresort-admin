@@ -58,19 +58,15 @@ export type CreateRoomTypeState = {
   status: "idle" | "success" | "error";
   message: string | null;
   createdSlug: string | null;
+  createdId: string | null;
 };
 
 const initialCreateRoomTypeState: CreateRoomTypeState = {
   status: "idle",
   message: null,
-  createdSlug: null
+  createdSlug: null,
+  createdId: null
 };
-
-function getUploadedFiles(formData: FormData, key: string): File[] {
-  return formData
-    .getAll(key)
-    .filter((value): value is File => value instanceof File && value.size > 0);
-}
 
 function optionalText(value: string | undefined) {
   return value ? value : null;
@@ -257,16 +253,6 @@ export async function createRoomTypeAction(
     };
   }
 
-  const galleryFiles = getUploadedFiles(formData, "gallery_images");
-
-  if (galleryFiles.length > MAX_GALLERY_IMAGES) {
-    return {
-      ...initialCreateRoomTypeState,
-      status: "error",
-      message: `You can upload at most ${MAX_GALLERY_IMAGES} gallery images at a time.`
-    };
-  }
-
   const room = parsed.data;
   const baseSlug = roomSlugFromTitle(room.title);
   const sql = getSql();
@@ -353,7 +339,8 @@ export async function createRoomTypeAction(
   const result: CreateRoomTypeState = {
     status: "success",
     message: "Room type created.",
-    createdSlug: created.slug
+    createdSlug: created.slug,
+    createdId: created.id
   };
 
   revalidatePath("/rooms");
@@ -372,29 +359,9 @@ export async function createRoomTypeAction(
       priceUgx: room.price_ugx,
       inventoryCount: room.inventory_count,
       isPublished: room.is_published,
-      galleryImageCount: galleryFiles.length
+      galleryImageCount: 0
     }
   });
-
-  try {
-    for (const file of galleryFiles) {
-      const uploaded = await uploadImageFile(file, `rooms/${created.slug}/gallery`);
-      await sql`
-        update room_types
-        set gallery = array_append(coalesce(gallery, array[]::text[]), ${uploaded.url})
-        where id = ${created.id}
-      `;
-    }
-  } catch (error) {
-    return {
-      status: "error",
-      message:
-        error instanceof ImageUploadError
-          ? `Room was created, but photo upload failed: ${error.message}`
-          : "Room was created, but photo upload failed.",
-      createdSlug: created.slug
-    };
-  }
 
   return result;
 }

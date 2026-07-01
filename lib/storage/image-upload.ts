@@ -23,6 +23,14 @@ function randomId() {
   return globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
+export function imageExtensionForType(type: string): string {
+  return EXTENSION_BY_TYPE[type] ?? "bin";
+}
+
+export function buildImageObjectKey(prefix: string, stem: string, contentType: string): string {
+  return `${prefix.replace(/^\/+|\/+$/g, "")}/${stem}.${imageExtensionForType(contentType)}`;
+}
+
 function ascii(bytes: Uint8Array, start: number, end: number): string {
   return String.fromCharCode(...bytes.slice(start, end));
 }
@@ -69,7 +77,11 @@ function detectImageType(bytes: Uint8Array): string | null {
   return null;
 }
 
-export async function uploadImageFile(file: File, prefix: string): Promise<UploadResult> {
+export async function uploadImageFile(
+  file: File,
+  prefix: string,
+  options?: { key?: string }
+): Promise<UploadResult> {
   if (!ALLOWED_TYPES.has(file.type)) {
     throw new ImageUploadError("Only JPEG, PNG, WebP, or AVIF images are allowed.");
   }
@@ -86,8 +98,7 @@ export async function uploadImageFile(file: File, prefix: string): Promise<Uploa
     throw new ImageUploadError("Image file contents do not match the selected file type.");
   }
 
-  const extension = EXTENSION_BY_TYPE[file.type] ?? "bin";
-  const key = `${prefix.replace(/^\/+|\/+$/g, "")}/${Date.now()}-${randomId()}.${extension}`;
+  const key = options?.key ?? buildImageObjectKey(prefix, `${Date.now()}-${randomId()}`, file.type);
 
   return uploadObject(key, bytes, file.type);
 }

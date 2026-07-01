@@ -1,17 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { Pool } from "@neondatabase/serverless";
 import {
   AdminAuthorizationError,
   assertSameOriginRequest,
   requireApprovedAdminRole
 } from "@/lib/auth/admin-role";
-import { getSql } from "@/lib/db/client";
+import { getDatabaseUrl } from "@/lib/env";
+import { createTransactionPool, withTransaction } from "@/lib/db/sql";
 import {
   MUTATIONS,
   MutationError,
   roleAtLeast,
   type MutationContext
 } from "@/lib/sync/mutations";
+import { decideLedgerReplay, hashQueuedMutation } from "@/lib/sync/atomicity";
 import type { MutationResult, PushResponse, QueuedMutation } from "@/lib/sync/protocol";
 
 const MAX_PUSH_BODY_BYTES = 2 * 1024 * 1024;
@@ -33,63 +36,67 @@ function errorMessage(err: unknown): string {
 }
 
 async function applyOne(
+  pool: Pool,
   mutation: QueuedMutation,
-  ctx: MutationContext
+  ctx: Omit<MutationContext, "sql">
 ): Promise<MutationResult> {
-  const sql = getSql();
   const key = mutation.idempotencyKey;
+  const requestHash = await hashQueuedMutation(mutation);
 
-  // 1. Idempotency: already applied? Replay success without re-running.
-  const existing = (await sql`
-    select idempotency_key from sync_applied_mutations
-    where idempotency_key = ${key}
-    limit 1
-  `) as { idempotency_key: string }[];
-  if (existing.length > 0) {
-    return { idempotencyKey: key, ok: true };
-  }
-
-  // 2. Known mutation type?
-  const def = MUTATIONS[mutation.type];
-  if (!def) {
-    return {
-      idempotencyKey: key,
-      ok: false,
-      error: `Unknown mutation type: ${mutation.type}`,
-      retryable: false
-    };
-  }
-
-  // 3. Authorization — re-checked server-side against the live role.
-  if (!roleAtLeast(ctx.actorRole, def.minRole)) {
-    return {
-      idempotencyKey: key,
-      ok: false,
-      error: "Not authorized for this action.",
-      retryable: false
-    };
-  }
-
-  // 4. Apply + record audit + record idempotency.
   try {
-    const { audit } = await def.run(mutation.payload, { ...ctx, mutationId: key });
+    return await withTransaction(pool, async (sql) => {
+      const inserted = (await sql`
+        insert into sync_applied_mutations (idempotency_key, mutation_type, request_hash)
+        values (${key}, ${mutation.type}, ${requestHash})
+        on conflict (idempotency_key) do nothing
+        returning idempotency_key
+      `) as { idempotency_key: string }[];
 
-    await sql`
-      insert into audit_log
-        (actor_id, actor_email, action, entity_type, entity_id, summary, context)
-      values
-        (${ctx.actorId}, ${ctx.actorEmail}, ${audit.action}, ${audit.entityType},
-         ${audit.entityId}, ${audit.summary},
-         ${audit.context ? JSON.stringify(audit.context) : null})
-    `;
+      if (inserted.length === 0) {
+        const existing = (await sql`
+          select request_hash
+          from sync_applied_mutations
+          where idempotency_key = ${key}
+          limit 1
+        `) as { request_hash: string | null }[];
 
-    await sql`
-      insert into sync_applied_mutations (idempotency_key, mutation_type, result)
-      values (${key}, ${mutation.type}, ${JSON.stringify({ ok: true })})
-      on conflict (idempotency_key) do nothing
-    `;
+        const replay = decideLedgerReplay(existing[0]?.request_hash ?? null, requestHash);
+        if (replay === "conflict") {
+          throw new MutationError("Idempotency key reused for a different mutation payload.", false);
+        }
 
-    return { idempotencyKey: key, ok: true };
+        return { idempotencyKey: key, ok: true };
+      }
+
+      const def = MUTATIONS[mutation.type];
+      if (!def) {
+        throw new MutationError(`Unknown mutation type: ${mutation.type}`, false);
+      }
+
+      if (!roleAtLeast(ctx.actorRole, def.minRole)) {
+        throw new MutationError("Not authorized for this action.", false);
+      }
+
+      const mutationContext: MutationContext = { ...ctx, mutationId: key, sql };
+      const { audit } = await def.run(mutation.payload, mutationContext);
+
+      await sql`
+        insert into audit_log
+          (actor_id, actor_email, action, entity_type, entity_id, summary, context)
+        values
+          (${ctx.actorId}, ${ctx.actorEmail}, ${audit.action}, ${audit.entityType},
+           ${audit.entityId}, ${audit.summary},
+           ${audit.context ? JSON.stringify(audit.context) : null})
+      `;
+
+      await sql`
+        update sync_applied_mutations
+        set result = ${JSON.stringify({ ok: true })}::jsonb
+        where idempotency_key = ${key}
+      `;
+
+      return { idempotencyKey: key, ok: true };
+    });
   } catch (err) {
     if (err instanceof MutationError) {
       return { idempotencyKey: key, ok: false, error: err.message, retryable: err.retryable };
@@ -108,7 +115,9 @@ async function applyOne(
 }
 
 export async function POST(request: NextRequest) {
+  let pool: Pool | null = null;
   try {
+    pool = createTransactionPool(getDatabaseUrl());
     assertSameOriginRequest(request);
     const session = await requireApprovedAdminRole();
 
@@ -122,7 +131,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid push request." }, { status: 400 });
     }
 
-    const ctx: MutationContext = {
+    const ctx: Omit<MutationContext, "sql"> = {
       actorId: session.userId,
       actorEmail: session.email,
       actorRole: session.role
@@ -130,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     const results: MutationResult[] = [];
     for (const mutation of parsed.data.mutations) {
-      results.push(await applyOne(mutation, ctx));
+      results.push(await applyOne(pool, mutation, ctx));
     }
 
     const body: PushResponse = { results };
@@ -140,5 +149,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     return NextResponse.json({ error: "Sync push failed." }, { status: 500 });
+  } finally {
+    await pool?.end().catch(() => undefined);
   }
 }

@@ -1,8 +1,8 @@
 import "server-only";
 
 import { z } from "zod";
-import { getSql } from "@/lib/db/client";
 import type { AdminRole } from "@/lib/auth/session";
+import type { SqlTag } from "@/lib/db/sql";
 import {
   addMaintenanceNote,
   assignMaintenanceRecord,
@@ -10,8 +10,8 @@ import {
   createMaintenanceRecord,
   editMaintenanceRecord
 } from "@/lib/maintenance/service";
+import { createMaintenancePhotoRecord } from "@/lib/maintenance/photo";
 import { MAINTENANCE_CATEGORIES, MAINTENANCE_PRIORITIES, MAINTENANCE_STATUSES } from "@/lib/maintenance/types";
-import { uploadImageFile } from "@/lib/storage/image-upload";
 
 // Server-side registry of mutation types the sync push endpoint knows how to
 // apply. Each queued client mutation names one of these. The handler:
@@ -46,6 +46,7 @@ export type MutationContext = {
   actorId: string;
   actorEmail: string | null;
   actorRole: AdminRole;
+  sql: SqlTag;
   mutationId?: string;
 };
 
@@ -111,8 +112,7 @@ export const MUTATIONS: Record<string, MutationDef> = {
     minRole: "staff",
     run: async (raw, _ctx) => {
       const input = contactMarkSchema.parse(raw);
-      const sql = getSql();
-      const rows = (await sql`
+      const rows = (await _ctx.sql`
         update contact_submissions
         set status = ${input.status}
         where id = ${input.contactId}
@@ -139,8 +139,7 @@ export const MUTATIONS: Record<string, MutationDef> = {
     minRole: "staff",
     run: async (raw, _ctx) => {
       const input = roomUnitHousekeepingSchema.parse(raw);
-      const sql = getSql();
-      const rows = (await sql`
+      const rows = (await _ctx.sql`
         update room_units
         set housekeeping_status = ${input.status}, notes = ${input.notes}
         where id = ${input.unitId}
@@ -166,7 +165,7 @@ export const MUTATIONS: Record<string, MutationDef> = {
     minRole: "staff",
     run: async (raw, ctx) => {
       const input = maintenanceCreateSchema.parse(raw);
-      const result = await createMaintenanceRecord(input, maintenanceActor(ctx));
+      const result = await createMaintenanceRecord(input, maintenanceActor(ctx), ctx.sql);
       return { audit: result.audit };
     }
   },
@@ -174,50 +173,40 @@ export const MUTATIONS: Record<string, MutationDef> = {
     minRole: "staff",
     run: async (raw, ctx) => {
       const input = maintenanceEditSchema.parse(raw);
-      return { audit: await editMaintenanceRecord({ id: input.workOrderId, ...input }, maintenanceActor(ctx)) };
+      return { audit: await editMaintenanceRecord({ id: input.workOrderId, ...input }, maintenanceActor(ctx), ctx.sql) };
     }
   },
   "maintenance.assign": {
     minRole: "admin",
     run: async (raw, ctx) => {
       const input = maintenanceAssignSchema.parse(raw);
-      return { audit: await assignMaintenanceRecord(input.workOrderId, input.assignedTo, input.note, maintenanceActor(ctx)) };
+      return { audit: await assignMaintenanceRecord(input.workOrderId, input.assignedTo, input.note, maintenanceActor(ctx), ctx.sql) };
     }
   },
   "maintenance.status": {
     minRole: "staff",
     run: async (raw, ctx) => {
       const input = maintenanceStatusSchema.parse(raw);
-      return { audit: await changeMaintenanceStatus({ id: input.workOrderId, ...input }, maintenanceActor(ctx)) };
+      return { audit: await changeMaintenanceStatus({ id: input.workOrderId, ...input }, maintenanceActor(ctx), ctx.sql) };
     }
   },
   "maintenance.note": {
     minRole: "staff",
     run: async (raw, ctx) => {
       const input = maintenanceNoteSchema.parse(raw);
-      return { audit: await addMaintenanceNote(input.workOrderId, input.note, maintenanceActor(ctx)) };
+      return { audit: await addMaintenanceNote(input.workOrderId, input.note, maintenanceActor(ctx), ctx.sql) };
     }
   },
   "maintenance.photo_upload": {
     minRole: "staff",
     run: async (raw, ctx) => {
       const input = maintenancePhotoSchema.parse(raw);
-      const binary = atob(input.base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-      const file = new File([bytes], input.filename, { type: input.mimeType });
-      const uploaded = await uploadImageFile(file, `maintenance/${input.workOrderId}`);
-      const sql = getSql();
-      await sql`
-        WITH photo AS (
-          INSERT INTO maintenance_photos (id, work_order_id, filename, storage_path, uploaded_by)
-          VALUES (${input.photoId}::uuid, ${input.workOrderId}::uuid, ${input.filename}, ${uploaded.url}, ${ctx.actorId}::uuid)
-          ON CONFLICT (id) DO NOTHING RETURNING work_order_id
-        )
-        INSERT INTO maintenance_activity (id, work_order_id, actor, action, notes)
-        SELECT COALESCE(${ctx.mutationId}::uuid, gen_random_uuid()), work_order_id, ${ctx.actorId}::uuid, 'photo_added', ${input.filename} FROM photo
-      `;
-      return { audit: { action: "maintenance.photo_added", entityType: "maintenance_work_order", entityId: input.workOrderId, summary: "Added a maintenance photo.", context: { photoId: input.photoId, filename: input.filename } } };
+      const result = await createMaintenancePhotoRecord(
+        input,
+        { userId: ctx.actorId, email: ctx.actorEmail, role: ctx.actorRole, activityId: ctx.mutationId },
+        ctx.sql
+      );
+      return { audit: result.audit };
     }
   }
 };

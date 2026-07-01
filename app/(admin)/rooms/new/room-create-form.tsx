@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { UgxAmountInput } from "@/components/ugx-amount-input";
-import { createRoomTypeAction, type CreateRoomTypeState } from "@/lib/rooms/actions";
+import { shrinkImage } from "@/lib/images/shrink-image";
+import { createRoomTypeAction, uploadRoomGalleryImageAction, type CreateRoomTypeState } from "@/lib/rooms/actions";
 
 const MAX_GALLERY_IMAGES = 15;
+const MAX_BYTES = 8 * 1024 * 1024;
 
 const initialCreateRoomTypeState: CreateRoomTypeState = {
   status: "idle",
   message: null,
-  createdSlug: null
+  createdSlug: null,
+  createdId: null
 };
 
 function TextField({
@@ -79,10 +82,13 @@ export function RoomCreateForm() {
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [state, formAction, isPending] = useActionState(
     createRoomTypeAction,
     initialCreateRoomTypeState
   );
+  const [isSubmitting, startTransition] = useTransition();
+  const uploadStartedForRef = useRef<string | null>(null);
 
   useEffect(() => {
     const nextUrls = galleryFiles.map((file) => URL.createObjectURL(file));
@@ -94,14 +100,70 @@ export function RoomCreateForm() {
     };
   }, [galleryFiles]);
 
-  useEffect(() => {
-    if (state.status !== "success") return;
+  function resetFormState() {
     formRef.current?.reset();
     setGalleryFiles([]);
     setGalleryPreviews([]);
     setPhotoError(null);
+    setUploadProgress(null);
     syncFileInput(galleryInputRef.current, []);
-  }, [state.status]);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPhotoError(null);
+
+    const formData = new FormData(event.currentTarget);
+    formData.delete("gallery_images");
+
+    startTransition(() => {
+      formAction(formData);
+    });
+  }
+
+  useEffect(() => {
+    const createdId = state.createdId;
+    const createdSlug = state.createdSlug;
+    if (state.status !== "success" || !createdId || !createdSlug) return;
+
+    if (uploadStartedForRef.current === createdId) return;
+    uploadStartedForRef.current = createdId;
+
+    if (galleryFiles.length === 0) {
+      resetFormState();
+      uploadStartedForRef.current = null;
+      return;
+    }
+
+    void (async () => {
+      try {
+        for (let index = 0; index < galleryFiles.length; index += 1) {
+          const file = galleryFiles[index];
+          setUploadProgress(`Uploading ${index + 1} of ${galleryFiles.length}: ${file.name}`);
+
+          const processed = await shrinkImage(file);
+          if (processed.size > MAX_BYTES) {
+            throw new Error(
+              `"${file.name}" is too large even after compression. Try a smaller photo.`
+            );
+          }
+
+          const uploadForm = new FormData();
+          uploadForm.set("id", createdId);
+          uploadForm.set("slug", createdSlug);
+          uploadForm.set("image", processed);
+          await uploadRoomGalleryImageAction(uploadForm);
+        }
+
+        resetFormState();
+      } catch (error) {
+        resetFormState();
+        setPhotoError(error instanceof Error ? error.message : "Upload failed.");
+      } finally {
+        uploadStartedForRef.current = null;
+      }
+    })();
+  }, [galleryFiles, state.createdId, state.createdSlug, state.status]);
 
   function updateGalleryFiles(files: File[]) {
     if (files.length > MAX_GALLERY_IMAGES) {
@@ -119,7 +181,7 @@ export function RoomCreateForm() {
   }
 
   return (
-    <form ref={formRef} action={formAction} className="grid gap-5">
+    <form ref={formRef} onSubmit={handleSubmit} className="grid gap-5">
       {state.message ? (
         <div
           className={`rounded-2xl border px-4 py-3 text-sm ${
@@ -203,6 +265,10 @@ export function RoomCreateForm() {
               : `Select up to ${MAX_GALLERY_IMAGES - galleryFiles.length} image${MAX_GALLERY_IMAGES - galleryFiles.length === 1 ? "" : "s"} at once. Large photos are resized automatically before upload.`}
           </p>
           {photoError ? <p className="text-xs font-semibold text-red-600">{photoError}</p> : null}
+          {uploadProgress ? <p className="text-xs font-semibold text-oliveMuted-600">{uploadProgress}</p> : null}
+          {galleryFiles.length > 0 && !uploadProgress ? (
+            <p className="text-xs text-oliveMuted-500">Images will upload one at a time after you create the room.</p>
+          ) : null}
         </div>
       </section>
 
@@ -237,10 +303,10 @@ export function RoomCreateForm() {
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isPending || isSubmitting || uploadProgress !== null}
           className="rounded-2xl bg-oliveMuted-600 px-5 py-3 text-sm font-semibold text-canvas-light transition hover:bg-oliveMuted-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Creating room..." : "Create room type"}
+          {uploadProgress ? "Uploading images..." : isPending ? "Creating room..." : "Create room type"}
         </button>
       </div>
     </form>

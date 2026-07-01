@@ -5,7 +5,8 @@ import { z } from "zod";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
 import { getSql } from "@/lib/db/client";
-import { ImageUploadError, uploadImageFile } from "@/lib/storage/image-upload";
+import { ImageUploadError } from "@/lib/storage/image-upload";
+import { createMaintenancePhotoRecord } from "./photo";
 import {
   addMaintenanceNote,
   assignMaintenanceRecord,
@@ -141,18 +142,27 @@ export async function uploadMaintenancePhotoAction(formData: FormData): Promise<
     const photoId = optionalUuid.parse(String(formData.get("photoId") ?? "")) ?? crypto.randomUUID();
     const file = formData.get("image");
     if (!(file instanceof File)) throw new Error("Choose a maintenance photo.");
-    const uploaded = await uploadImageFile(file, `maintenance/${workOrderId}`);
     const sql = getSql();
-    await sql`
-      WITH photo AS (
-        INSERT INTO maintenance_photos (id, work_order_id, filename, storage_path, uploaded_by)
-        VALUES (${photoId}::uuid, ${workOrderId}::uuid, ${file.name}, ${uploaded.url}, ${session.userId}::uuid)
-        RETURNING work_order_id
-      )
-      INSERT INTO maintenance_activity (work_order_id, actor, action, notes)
-      SELECT work_order_id, ${session.userId}::uuid, 'photo_added', ${file.name} FROM photo
-    `;
-    await recordAuditLog({ actorId: session.userId, actorEmail: session.email, action: "maintenance.photo_added", entityType: "maintenance_work_order", entityId: workOrderId, summary: `Added a photo to maintenance work order.`, context: { photoId, filename: file.name, storagePath: uploaded.url } });
+    const { audit, storagePath } = await createMaintenancePhotoRecord(
+      {
+        photoId,
+        workOrderId,
+        filename: file.name,
+        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/avif",
+        base64: Buffer.from(await file.arrayBuffer()).toString("base64")
+      },
+      { userId: session.userId, email: session.email, role: session.role },
+      sql
+    );
+    await recordAuditLog({
+      actorId: session.userId,
+      actorEmail: session.email,
+      action: audit.action,
+      entityType: audit.entityType,
+      entityId: workOrderId,
+      summary: audit.summary,
+      context: { ...audit.context, storagePath }
+    });
     revalidateMaintenance(workOrderId);
     return { ok: true, workOrderId };
   } catch (error) {

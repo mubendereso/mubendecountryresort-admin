@@ -258,6 +258,19 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS maintenance_rooms_type_idx
         ON maintenance_rooms(room_type_id, unit_name);
     `
+  },
+  {
+    version: 9,
+    name: "outbox_claim_tokens",
+    up: `
+      -- Track which browser tab currently owns a sync drain batch so multiple
+      -- tabs do not drain the same rows at once.
+      ALTER TABLE _outbox ADD COLUMN claim_token TEXT;
+      ALTER TABLE _outbox ADD COLUMN claimed_at TEXT;
+
+      CREATE INDEX IF NOT EXISTS _outbox_claim_idx
+        ON _outbox(status, claimed_at, created_at);
+    `
   }
 ];
 
