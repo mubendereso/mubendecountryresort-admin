@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { listAuditEvents } from "@/lib/audit/data";
 import { auditChangesSummary } from "@/lib/audit/presentation";
-
-function csvCell(value: unknown): string {
-  const text = String(value ?? "");
-  return `"${text.replaceAll('"', '""')}"`;
-}
+import { serializeCsv } from "@/lib/csv";
 
 export async function GET(request: Request) {
   const session = await requireApprovedAdminRole();
@@ -43,7 +39,7 @@ export async function GET(request: Request) {
     ])
   ];
 
-  const csv = `${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+  const csv = serializeCsv(rows, { trailingNewline: true });
 
   return new NextResponse(csv, {
     headers: {

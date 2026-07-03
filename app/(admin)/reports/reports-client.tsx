@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { serializeCsv } from "@/lib/csv";
 import type { ReportData } from "@/lib/reports/types";
 
 function fmtUgx(n: number): string {
@@ -32,11 +33,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 // Build a CSV string and trigger a download. Runs entirely in the browser,
 // so it costs the Worker nothing.
 function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
-  const escape = (v: string | number) => {
-    const s = String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
+  const csv = serializeCsv([headers, ...rows], { lineEnding: "\n" });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

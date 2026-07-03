@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getCompanyAccountDetail, listCompanyPayments } from "@/lib/companies/data";
+import {
+  COMPANY_EXPORT_MAX_RANGE_DAYS,
+  COMPANY_EXPORT_MAX_ROWS
+} from "@/lib/companies/export-policy";
 import { listInvoicesForCompany } from "@/lib/invoices/data";
 import { CompanyForm } from "../company-form";
 import { CompanyPaymentForm } from "../company-payment-form";
@@ -50,6 +54,10 @@ export default async function CompanyDetailPage({
   if (!data) notFound();
 
   const company = data.company;
+  const exportTo = new Date().toISOString().slice(0, 10);
+  const exportFromDate = new Date(`${exportTo}T00:00:00Z`);
+  exportFromDate.setUTCDate(exportFromDate.getUTCDate() - 89);
+  const exportFrom = exportFromDate.toISOString().slice(0, 10);
   const credit = data.credit;
   const exposurePercent =
     company.credit_limit_ugx > 0
@@ -93,11 +101,47 @@ export default async function CompanyDetailPage({
               {company.contact_phone ? ` - ${company.contact_phone}` : ""}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/companies/${company.id}/export?dataset=invoices`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export invoices</Link>
-            <Link href={`/companies/${company.id}/export?dataset=allocations`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export allocations</Link>
-            <Link href={`/companies/${company.id}/export?dataset=payments`} className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-3 text-sm font-semibold text-oliveMuted-600">Export payments</Link>
-            <Link href="/companies" className="rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-4 py-3 text-sm font-semibold text-oliveMuted-600">Back</Link>
+          <div className="grid gap-3">
+            <form
+              action={`/companies/${company.id}/export`}
+              method="get"
+              className="grid gap-3 rounded-[22px] border border-stoneWarm-200 bg-white/85 p-4"
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1 text-xs font-semibold text-oliveMuted-600">
+                  Export from
+                  <input
+                    type="date"
+                    name="from"
+                    defaultValue={exportFrom}
+                    max={exportTo}
+                    required
+                    className="rounded-xl border border-stoneWarm-200 px-3 py-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-oliveMuted-600">
+                  Export to
+                  <input
+                    type="date"
+                    name="to"
+                    defaultValue={exportTo}
+                    max={exportTo}
+                    required
+                    className="rounded-xl border border-stoneWarm-200 px-3 py-2 text-sm font-normal"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" name="dataset" value="invoices" className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm font-semibold text-oliveMuted-600">Export invoices</button>
+                <button type="submit" name="dataset" value="allocations" className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm font-semibold text-oliveMuted-600">Export allocations</button>
+                <button type="submit" name="dataset" value="payments" className="rounded-[18px] border border-stoneWarm-200 bg-white px-4 py-2.5 text-sm font-semibold text-oliveMuted-600">Export payments</button>
+              </div>
+              <p className="text-xs text-oliveMuted-500">
+                Maximum {COMPANY_EXPORT_MAX_RANGE_DAYS} days and{" "}
+                {COMPANY_EXPORT_MAX_ROWS.toLocaleString("en-UG")} rows per export.
+              </p>
+            </form>
+            <Link href="/companies" className="w-fit rounded-[18px] border border-stoneWarm-200 bg-[#fffdf8]/90 px-4 py-3 text-sm font-semibold text-oliveMuted-600">Back</Link>
           </div>
         </div>
       </header>
