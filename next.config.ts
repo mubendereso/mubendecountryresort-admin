@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+import { buildAdminContentSecurityPolicy } from "./lib/security/csp";
+
+const contentSecurityPolicy = buildAdminContentSecurityPolicy({
+  isDevelopment: process.env.NODE_ENV === "development",
+  r2PublicHostname: process.env.R2_PUBLIC_HOSTNAME
+});
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -38,14 +44,9 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains"
           },
-          // Minimal CSP: locks down framing, plugin embedding, base-uri and
-          // form targets without setting script-src/default-src, so Next's
-          // inline hydration scripts keep working (no nonce plumbing needed).
-          // A nonce-based script-src is a future hardening step.
           {
             key: "Content-Security-Policy",
-            value:
-              "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
+            value: contentSecurityPolicy
           }
         ]
       }
