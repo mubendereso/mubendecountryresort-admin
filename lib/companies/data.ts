@@ -127,19 +127,119 @@ export async function listCompanyAccounts(): Promise<CompanyAccount[]> {
 export async function listCompanySelectOptions(): Promise<CompanySelectOption[]> {
   const sql = getSql();
   const rows = (await sql`
-    SELECT id::text, company_name, contact_name, is_active, is_suspended
-    FROM company_accounts
-    ORDER BY is_active DESC, company_name ASC
-  `) as Pick<CompanySelectOption, "id" | "company_name" | "contact_name" | "is_active" | "is_suspended">[];
+    WITH invoice_balances AS (
+      SELECT
+        i.company_account_id,
+        i.id,
+        i.invoice_type,
+        i.booking_id,
+        i.group_id,
+        i.due_date,
+        GREATEST(0, i.total_charges_ugx - COALESCE(live.paid_ugx, i.total_paid_ugx))::bigint AS balance_ugx
+      FROM invoices i
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          WHEN i.invoice_type = 'booking' THEN (
+            SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+            FROM folio_payments fp
+            WHERE fp.booking_id = i.booking_id
+          )
+          ELSE (
+            SELECT COALESCE(SUM(fp.amount_ugx), 0)::bigint
+            FROM folio_payments fp
+            JOIN bookings b ON b.id = fp.booking_id
+            WHERE b.group_id = i.group_id
+          )
+        END AS paid_ugx
+      ) live ON true
+      WHERE i.status = 'issued'
+    ),
+    booking_balances AS (
+      SELECT
+        b.id,
+        b.group_id,
+        CASE WHEN b.group_id IS NULL THEN b.company_account_id ELSE rg.company_account_id END AS company_account_id,
+        GREATEST(
+          COALESCE(charges.total_ugx, b.quoted_total_ugx) -
+          COALESCE(payments.total_ugx, CASE WHEN b.paid_at IS NOT NULL THEN b.quoted_total_ugx ELSE 0 END),
+          0
+        )::bigint AS balance_ugx
+      FROM bookings b
+      LEFT JOIN reservation_groups rg ON rg.id = b.group_id
+      LEFT JOIN LATERAL (
+        SELECT (SUM(CASE WHEN fc.category = 'discount' THEN -fc.amount_ugx ELSE fc.amount_ugx END)
+          FILTER (WHERE fc.voided_at IS NULL))::bigint AS total_ugx
+        FROM folio_charges fc
+        WHERE fc.booking_id = b.id
+      ) charges ON true
+      LEFT JOIN LATERAL (
+        SELECT SUM(fp.amount_ugx)::bigint AS total_ugx
+        FROM folio_payments fp
+        WHERE fp.booking_id = b.id
+      ) payments ON true
+      WHERE b.status NOT IN ('cancelled', 'no_show', 'refunded')
+        AND (
+          (b.group_id IS NULL AND b.company_account_id IS NOT NULL)
+          OR (b.group_id IS NOT NULL AND rg.company_account_id IS NOT NULL)
+        )
+    ),
+    group_balances AS (
+      SELECT bb.company_account_id, bb.group_id, SUM(bb.balance_ugx)::bigint AS balance_ugx
+      FROM booking_balances bb
+      JOIN reservation_groups rg ON rg.id = bb.group_id
+      WHERE rg.status = 'active'
+      GROUP BY bb.company_account_id, bb.group_id
+    ),
+    direct_balances AS (
+      SELECT bb.company_account_id, bb.id AS booking_id, bb.balance_ugx
+      FROM booking_balances bb
+      WHERE bb.group_id IS NULL
+    ),
+    totals AS (
+      SELECT
+        ca.id AS company_account_id,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id), 0)::bigint AS open_invoices,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND ib.due_date < CURRENT_DATE AND ib.balance_ugx > 0), 0)::bigint AS overdue,
+        COALESCE((SELECT COUNT(*) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND ib.due_date < CURRENT_DATE AND ib.balance_ugx > 0), 0)::int AS overdue_count,
+        COALESCE((SELECT SUM(gb.balance_ugx) FROM group_balances gb WHERE gb.company_account_id = ca.id), 0)::bigint AS group_exposure,
+        COALESCE((SELECT SUM(db.balance_ugx) FROM direct_balances db WHERE db.company_account_id = ca.id), 0)::bigint AS booking_exposure,
+        COALESCE((SELECT SUM(gb.balance_ugx) FROM group_balances gb WHERE gb.company_account_id = ca.id AND NOT EXISTS (
+          SELECT 1 FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND ib.group_id = gb.group_id AND ib.balance_ugx > 0
+        )), 0)::bigint AS unbilled_group,
+        COALESCE((SELECT SUM(db.balance_ugx) FROM direct_balances db WHERE db.company_account_id = ca.id AND NOT EXISTS (
+          SELECT 1 FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND ib.booking_id = db.booking_id AND ib.balance_ugx > 0
+        )), 0)::bigint AS unbilled_booking,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND (ib.due_date >= CURRENT_DATE OR ib.due_date IS NULL)), 0)::bigint AS aging_current,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND CURRENT_DATE - ib.due_date BETWEEN 1 AND 30), 0)::bigint AS aging_1_30,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND CURRENT_DATE - ib.due_date BETWEEN 31 AND 60), 0)::bigint AS aging_31_60,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND CURRENT_DATE - ib.due_date BETWEEN 61 AND 90), 0)::bigint AS aging_61_90,
+        COALESCE((SELECT SUM(ib.balance_ugx) FROM invoice_balances ib WHERE ib.company_account_id = ca.id AND CURRENT_DATE - ib.due_date > 90), 0)::bigint AS aging_90_plus
+      FROM company_accounts ca
+    )
+    SELECT
+      ca.id::text,
+      ca.company_name,
+      ca.contact_name,
+      ca.is_active,
+      ca.is_suspended,
+      CASE
+        WHEN ca.is_suspended THEN 'suspended'
+        WHEN t.overdue > 0 THEN 'overdue'
+        WHEN (t.open_invoices + t.unbilled_group + t.unbilled_booking) > ca.credit_limit_ugx THEN 'over_limit'
+        WHEN ca.credit_limit_ugx > 0 AND (t.open_invoices + t.unbilled_group + t.unbilled_booking) * 100 >= ca.credit_limit_ugx * 80 THEN 'warning'
+        ELSE 'clear'
+      END AS credit_status,
+      GREATEST(ca.credit_limit_ugx - (t.open_invoices + t.unbilled_group + t.unbilled_booking), 0)::bigint AS available_credit_ugx,
+      t.overdue AS overdue_invoices_ugx
+    FROM company_accounts ca
+    JOIN totals t ON t.company_account_id = ca.id
+    ORDER BY ca.is_active DESC, ca.company_name ASC
+  `) as CompanySelectOption[];
 
-  return Promise.all(rows.map(async (company) => {
-    const credit = await getCompanyCreditAssessment(company.id);
-    return {
-      ...company,
-      credit_status: credit?.credit_status ?? "clear",
-      available_credit_ugx: credit?.available_credit_ugx ?? 0,
-      overdue_invoices_ugx: credit?.overdue_invoices_ugx ?? 0
-    };
+  return rows.map((row) => ({
+    ...row,
+    available_credit_ugx: Number(row.available_credit_ugx),
+    overdue_invoices_ugx: Number(row.overdue_invoices_ugx)
   }));
 }
 
@@ -435,6 +535,26 @@ export async function listCompanyRoomRates(companyId: string): Promise<CompanyRo
     LEFT JOIN admin_users au ON au.id = crr.created_by
     WHERE crr.company_account_id = ${companyId}::uuid
     ORDER BY crr.status, rt.title, crr.valid_from DESC
+  `) as CompanyRoomRate[];
+  return rows.map((row) => ({ ...row, public_rate_ugx: Number(row.public_rate_ugx), rate_ugx: Number(row.rate_ugx) }));
+}
+
+export async function listCompanyRoomRatesForCompanies(companyIds: string[]): Promise<CompanyRoomRate[]> {
+  if (companyIds.length === 0) return [];
+
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT crr.id::text, crr.company_account_id::text, crr.room_type_id::text,
+      rt.slug AS room_type_slug, rt.title AS room_type_title, rt.price_ugx AS public_rate_ugx,
+      crr.rate_ugx, crr.valid_from::text, crr.valid_to::text, crr.status, crr.notes,
+      crr.created_by::text, au.full_name AS created_by_name,
+      to_char(crr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+      to_char(crr.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+    FROM company_room_rates crr
+    JOIN room_types rt ON rt.id = crr.room_type_id
+    LEFT JOIN admin_users au ON au.id = crr.created_by
+    WHERE crr.company_account_id = ANY(${companyIds}::uuid[])
+    ORDER BY crr.company_account_id, crr.status, rt.title, crr.valid_from DESC
   `) as CompanyRoomRate[];
   return rows.map((row) => ({ ...row, public_rate_ugx: Number(row.public_rate_ugx), rate_ugx: Number(row.rate_ugx) }));
 }

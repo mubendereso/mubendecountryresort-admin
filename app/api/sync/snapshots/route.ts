@@ -5,6 +5,10 @@ import {
   requireApprovedAdminRole
 } from "@/lib/auth/admin-role";
 import { getSql } from "@/lib/db/client";
+import {
+  MAX_OFFLINE_ROOM_UNITS,
+  roomUnitSnapshotExceedsLimit
+} from "@/lib/offline-snapshots/policy";
 import type {
   BookingSnapshot,
   FolioSnapshot,
@@ -212,8 +216,22 @@ export async function POST(request: NextRequest) {
           to_char(ru.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
         from room_units ru
         order by ru.unit_name asc
+        limit ${MAX_OFFLINE_ROOM_UNITS + 1}
       `
     ]);
+
+    const roomUnits = roomUnitRows as RoomUnitSnapshot[];
+    if (roomUnitSnapshotExceedsLimit(roomUnits.length)) {
+      console.error("offline_snapshot_room_unit_cap_exceeded", {
+        limit: MAX_OFFLINE_ROOM_UNITS
+      });
+      return NextResponse.json(
+        {
+          error: "Offline snapshot is too large. Reduce room inventory or enable incremental synchronization."
+        },
+        { status: 503 }
+      );
+    }
 
     const generatedAt = String((generatedRows as { generated_at: string }[])[0]?.generated_at ?? new Date().toISOString());
 
@@ -234,7 +252,7 @@ export async function POST(request: NextRequest) {
       reservation_groups: (groupRows as ReservationGroupSnapshot[]).map((row) =>
         toNumber(row, ["member_booking_count", "balance_due"])
       ),
-      room_units: roomUnitRows as RoomUnitSnapshot[]
+      room_units: roomUnits
     };
 
     return NextResponse.json(body);

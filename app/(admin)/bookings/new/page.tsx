@@ -3,7 +3,7 @@ import { getRoomTypes } from "@/lib/rooms/data";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { getReservationGroupById } from "@/lib/groups/data";
 import { BookingForm } from "../booking-form";
-import { listCompanyRoomRates, listCompanySelectOptions } from "@/lib/companies/data";
+import { listCompanyRoomRatesForCompanies, listCompanySelectOptions } from "@/lib/companies/data";
 
 export default async function NewBookingPage({
   searchParams
@@ -17,7 +17,7 @@ export default async function NewBookingPage({
     params.groupId ? getReservationGroupById(params.groupId) : Promise.resolve(null),
     listCompanySelectOptions()
   ]);
-  const rates = (await Promise.all(companies.map((company) => listCompanyRoomRates(company.id)))).flat();
+  const rates = await listCompanyRoomRatesForCompanies(companies.map((company) => company.id));
 
   if (params.groupId && !group) notFound();
 
