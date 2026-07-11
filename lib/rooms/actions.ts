@@ -6,6 +6,10 @@ import { z } from "zod";
 import { getSql } from "@/lib/db/client";
 import { requireApprovedAdminRole } from "@/lib/auth/admin-role";
 import { recordAuditLog } from "@/lib/audit/log";
+import {
+  RoomCoverUploadError,
+  uploadAndStoreRoomCover
+} from "@/lib/rooms/cover-upload-core";
 import { textareaToList } from "@/lib/rooms/format";
 import { ImageUploadError, uploadImageFile } from "@/lib/storage/image-upload";
 import { deleteObject, keyFromPublicUrl } from "@/lib/storage/r2";
@@ -824,39 +828,58 @@ export async function uploadRoomCoverAction(formData: FormData) {
     redirect(`/rooms/${slug}?message=${encodeURIComponent("Choose an image to upload.")}`);
   }
 
-  let url: string;
+  const sql = getSql();
+  let room: {
+    id: string;
+    title: string;
+    slug: string;
+    cover_image_url: string | null;
+  };
+
   try {
-    ({ url } = await uploadImageFile(file as File, `rooms/${slug}/cover`));
+    ({ room } = await uploadAndStoreRoomCover(file as File, `rooms/${slug}/cover`, {
+      uploadImageFile,
+      deleteObject,
+      async updateRoomCover(url) {
+        const rows = (await sql`
+          update room_types
+          set cover_image_url = ${url}
+          where id = ${id}
+          returning id::text, title, slug, cover_image_url
+        `) as {
+          id: string;
+          title: string;
+          slug: string;
+          cover_image_url: string | null;
+        }[];
+        return rows[0] ?? null;
+      },
+      onCleanupFailure(error, key) {
+        console.error("Room cover upload cleanup failed.", { id, slug, key }, error);
+      }
+    }));
   } catch (error) {
     const message =
-      error instanceof ImageUploadError ? error.message : "Image upload failed.";
+      error instanceof ImageUploadError || error instanceof RoomCoverUploadError
+        ? error.message
+        : "Image upload failed on the server.";
+    console.error("Room cover upload failed.", { id, slug }, error);
     redirect(`/rooms/${slug}?message=${encodeURIComponent(message)}`);
   }
 
-  const sql = getSql();
-  const rows = (await sql`
-    update room_types
-    set cover_image_url = ${url}
-    where id = ${id}
-    returning id::text, title, slug, cover_image_url
-  `) as { id: string; title: string; slug: string; cover_image_url: string | null }[];
-
-  const room = rows[0];
-  if (room) {
-    await recordAuditLog({
-      actorId: session.userId,
-      actorEmail: session.email,
-      action: "room_type.cover_updated",
-      entityType: "room_type",
-      entityId: room.id,
-      summary: `Updated cover image for ${room.title}.`,
-      context: {
-        roomTypeId: room.id,
-        slug: room.slug,
-        coverImageUrl: room.cover_image_url
-      }
-    });
-  }
+  await recordAuditLog({
+    actorId: session.userId,
+    actorEmail: session.email,
+    action: "room_type.cover_updated",
+    entityType: "room_type",
+    entityId: room.id,
+    summary: `Updated cover image for ${room.title}.`,
+    context: {
+      roomTypeId: room.id,
+      slug: room.slug,
+      coverImageUrl: room.cover_image_url
+    }
+  });
 
   revalidatePath("/rooms");
   revalidatePath(`/rooms/${slug}`);

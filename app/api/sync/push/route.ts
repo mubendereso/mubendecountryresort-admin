@@ -9,6 +9,10 @@ import {
 import { getDatabaseUrl } from "@/lib/env";
 import { createTransactionPool, withTransaction } from "@/lib/db/sql";
 import {
+  readRequestBodyWithinLimit,
+  RequestBodyTooLargeError
+} from "@/lib/http/limited-body";
+import {
   MUTATIONS,
   MutationError,
   roleAtLeast,
@@ -121,12 +125,24 @@ export async function POST(request: NextRequest) {
     assertSameOriginRequest(request);
     const session = await requireApprovedAdminRole();
 
-    const contentLength = request.headers.get("content-length");
-    if (contentLength && Number(contentLength) > MAX_PUSH_BODY_BYTES) {
-      return NextResponse.json({ error: "Payload too large." }, { status: 413 });
+    let rawBody: string;
+    try {
+      rawBody = await readRequestBodyWithinLimit(request, MAX_PUSH_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return NextResponse.json({ error: "Payload too large." }, { status: 413 });
+      }
+      throw error;
     }
 
-    const parsed = pushSchema.safeParse(await request.json());
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid push request." }, { status: 400 });
+    }
+
+    const parsed = pushSchema.safeParse(parsedBody);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid push request." }, { status: 400 });
     }

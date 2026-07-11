@@ -12,6 +12,8 @@
     "start": "next start",
     "test:csv-security": "node --test tests/csv-security.test.mjs",
     "test:company-export-security": "node --test tests/company-export-security.test.mjs",
+    "test:room-cover-security": "node --test tests/room-cover-security.test.mjs",
+    "test:sync-body-limit": "node --test tests/sync-body-limit.test.mjs",
     "test:offline-security": "node --test tests/offline-security.test.mjs",
     "admin:create-user": "node scripts/create-admin-user.mjs",
     "typecheck": "tsc --noEmit",
