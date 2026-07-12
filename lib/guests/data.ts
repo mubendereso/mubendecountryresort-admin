@@ -180,7 +180,7 @@ export async function listBookingsByGuestKey(key: string): Promise<BookingRow[]>
       b.reference,
       b.room_type_id::text,
       rt.title AS room_type_title,
-      COALESCE(rt.cover_image_url, rt.gallery[1]) AS room_image_url,
+      COALESCE(NULLIF(rt.gallery[1], ''), NULLIF(rt.cover_image_url, '')) AS room_image_url,
       b.check_in::text,
       b.check_out::text,
       b.guests_adults,

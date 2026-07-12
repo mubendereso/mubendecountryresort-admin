@@ -125,7 +125,7 @@ export async function getOccupancyCalendarData(
         rt.title,
         rt.inventory_count,
         rt.sort_order,
-        COALESCE(NULLIF(rt.cover_image_url, ''), rt.gallery[1]) AS image_url,
+        COALESCE(NULLIF(rt.gallery[1], ''), NULLIF(rt.cover_image_url, '')) AS image_url,
         count(ru.id) FILTER (WHERE ru.housekeeping_status = 'out_of_order')::int AS out_of_order_count,
         greatest(
           rt.inventory_count
