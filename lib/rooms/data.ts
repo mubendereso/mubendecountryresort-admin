@@ -140,7 +140,7 @@ export async function getRoomsManagementData(): Promise<{
       rt.sort_order,
       rt.created_at::text,
       rt.updated_at::text,
-      COALESCE(NULLIF(rt.cover_image_url, ''), rt.gallery[1]) AS image_url,
+      COALESCE(NULLIF(rt.gallery[1], ''), NULLIF(rt.cover_image_url, '')) AS image_url,
       COALESCE(o.occupied_count, 0)::int AS occupied_count,
       greatest(
         rt.inventory_count
